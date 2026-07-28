@@ -78,6 +78,7 @@ function Overview({ ls, pkg }) {
     <div>
       <div className="card">
         {ls.one_liner && <p className="one-liner">{ls.one_liner}</p>}
+        {ls.story_hook && <p className="story-hook">{ls.story_hook}</p>}
         {ls.overview && <p className="overview">{ls.overview}</p>}
       </div>
 

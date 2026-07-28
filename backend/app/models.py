@@ -126,6 +126,7 @@ class ArcSummary(BaseModel):
 
 class LayeredSummary(BaseModel):
     one_liner: str = ""
+    story_hook: str = Field(default="", description="30-50字：这本书为什么值得读的钩子")
     overview: str = ""
     arcs: list[ArcSummary] = Field(default_factory=list)
     chapters: list[ChapterSummary] = Field(default_factory=list)

@@ -34,6 +34,38 @@ SUMMARY_SYSTEM_PROMPT = (
 )
 
 
+# 叙事编导：先判断作品基调，再据此选择讲述口吻。
+TONE_LIGHT = "轻松通俗"
+TONE_CLASSIC = "严肃经典"
+TONE_TRAGIC = "沉重悲剧"
+TONE_NONFICTION = "纪实历史"
+VALID_TONES = {TONE_LIGHT, TONE_CLASSIC, TONE_TRAGIC, TONE_NONFICTION}
+
+# 每种基调对应的讲述口吻（“半小时漫画式”只用于轻松通俗类）。
+TONE_VOICE = {
+    TONE_LIGHT: (
+        "用“半小时漫画”式的通俗口吻：像跟朋友唠嗑一样讲这个故事，"
+        "可以适度玩梗、用大白话打比方，轻松幽默，但每个梗都要服务于把剧情讲清楚。"
+    ),
+    TONE_CLASSIC: (
+        "用通俗但克制的口吻：把经典/严肃文学讲得让普通读者能读懂，"
+        "少玩梗，多在关键处点透主题与深意，庄重而不枯燥。"
+    ),
+    TONE_TRAGIC: (
+        "用庄重、共情的口吻：面对沉重或悲剧题材，保持尊重与克制，"
+        "不玩梗、不调侃，突出人物命运与情感冲击。"
+    ),
+    TONE_NONFICTION: (
+        "用清晰的科普/讲解口吻：像给零基础读者做知识梳理，"
+        "把事件的来龙去脉、时间线与因果讲清楚，客观平实。"
+    ),
+}
+
+
+def _voice_for_tone(tone: str) -> str:
+    return TONE_VOICE.get(tone, TONE_VOICE[TONE_LIGHT])
+
+
 MAX_TIMELINE_EVENTS = 120
 
 
@@ -115,6 +147,51 @@ def _make_summary_agent():  # pragma: no cover - requires AWS creds
     return Agent(model=model, system_prompt=SUMMARY_SYSTEM_PROMPT)
 
 
+def _story_spine(agent, digest: str, title: str):  # pragma: no cover - AWS
+    """Step 1 of 叙事编导：produce an internal '编导纲要' (not shown to user).
+
+    Decides the main thread, the tone (基调), the protagonists and the main-trunk
+    beats, so step 2 can boldly cut side material and tell one coherent story in
+    a voice that matches the work. Returns a StorySpine instance.
+    """
+    from pydantic import BaseModel, Field
+
+    class StorySpine(BaseModel):
+        main_thread: str = Field(description="一句话概括贯穿全书的主线（最重要的那条故事线）")
+        tone: str = Field(
+            description="作品基调，只能取以下之一：轻松通俗 / 严肃经典 / 沉重悲剧 / 纪实历史"
+        )
+        protagonists: list[str] = Field(default_factory=list, description="真正的主角（1-3人）")
+        key_beats: list[str] = Field(
+            default_factory=list, description="主干情节节点，按时间顺序，5-10条，删掉支线"
+        )
+
+    prompt = (
+        f"书名：{title}\n\n{digest}\n\n"
+        "你现在是一名“叙事编导”。请先通读上面的人物、关系与情节时间线，做一份内部编导纲要（不直接给读者看）：\n"
+        "1. main_thread：找出贯穿全书、最重要的一条主线剧情。\n"
+        "2. tone：判断这本书的基调，只能从【轻松通俗 / 严肃经典 / 沉重悲剧 / 纪实历史】中选一个"
+        "（网文/爽文/搞笑类→轻松通俗；名著/严肃文学→严肃经典；悲剧/沉重题材→沉重悲剧；纪实/历史→纪实历史）。\n"
+        "3. protagonists：谁是真正的主角（1-3人）。\n"
+        "4. key_beats：沿主线抽出5-10个主干情节节点，按时间顺序，果断舍弃支线与龙套。"
+    )
+    spine = agent.structured_output(StorySpine, prompt)
+    if spine.tone not in VALID_TONES:
+        spine.tone = TONE_LIGHT
+    return spine
+
+
+def _spine_block(spine) -> str:
+    """Render the internal spine as prompt context for step 2."""
+    beats = "\n".join(f"  {i}. {b}" for i, b in enumerate(spine.key_beats, start=1))
+    return (
+        "【编导纲要（内部参考，不要原样照抄给读者）】\n"
+        f"主线：{spine.main_thread}\n"
+        f"主角：{('、'.join(spine.protagonists)) or '（未定）'}\n"
+        f"主干节点：\n{beats}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -183,16 +260,30 @@ def _llm_summary(registry, chapters, communities, community_labels, id_to_name, 
     agent = _make_summary_agent()
     digest = _registry_digest(registry, chapters)
 
-    class _SummaryModel(LayeredSummary):
-        pass
+    # Step 1: 叙事编导——先定主线与基调（失败则退回中性默认，不影响后续）。
+    try:
+        spine = _story_spine(agent, digest, title)
+        tone = spine.tone
+        spine_block = _spine_block(spine)
+    except Exception:  # noqa: BLE001
+        tone = TONE_LIGHT
+        spine_block = ""
 
+    voice = _voice_for_tone(tone)
+
+    # Step 2: 按基调选定的口吻，围绕主线讲一个完整故事。
     prompt = (
         f"书名：{title}\n\n{digest}\n\n"
-        "请基于上面的【情节时间线】写出这本小说到底在讲什么，生成分层摘要，字段要求如下：\n"
-        "- one_liner：一句话点明故事核心（谁，遭遇了什么，追求什么）。\n"
-        "- overview：一段完整的故事梗概（200-400字），必须按【起因→发展→高潮→结局】"
-        "的叙事顺序讲清楚：故事的开端与主要矛盾、情节如何推进、关键转折/高潮、以及最终结局或走向。"
-        "要让没读过原著的读者看完就明白这本小说讲的是什么，禁止只罗列人物或关系。\n"
+        f"{spine_block}\n\n"
+        f"这本书的基调是【{tone}】。请你据此选择讲述口吻：{voice}\n"
+        "无论何种口吻，都必须遵守：忠于原著、绝不虚构原著没有的情节、面向没读过原著的零基础读者。\n\n"
+        "请围绕上面的主线讲清楚这本小说到底在讲什么，生成分层摘要，字段要求如下：\n"
+        "- one_liner：一句话点明故事核心（谁，遭遇了什么，追求什么），要有吸引力。\n"
+        "- story_hook：30-50字，告诉读者“这本书为什么值得读”，一句能勾起兴趣的钩子。\n"
+        "- overview：一段完整的故事梗概（200-400字），围绕主线、大胆取舍支线，"
+        "必须按【起因→发展→高潮→结局】的叙事顺序讲清楚：开端与主要矛盾、情节如何推进、"
+        "关键转折/高潮、以及最终结局或走向。要让没读过原著的读者看完就明白这本小说讲的是什么，"
+        "禁止只罗列人物或关系。\n"
         "- arcs：每条情节线一段摘要，对应下方给出的人物社区。\n"
         "- chapters：每章一句话，用叙事口吻概括本章发生了什么（推动了什么情节），"
         "不要写“本章无事件”这类空话。"
@@ -233,6 +324,10 @@ def _fake_summary(registry, chapters, communities, community_labels, id_to_name,
     main_names = [r.canonical for r in top_chars[:3]]
     one_liner = (
         f"《{title}》围绕{('、'.join(main_names)) or '主要人物'}展开的故事。"
+    )
+    story_hook = (
+        f"跟着{(main_names[0] if main_names else '主角')}的脚步，"
+        f"用30分钟理清这本书的{len(registry.events)}个关键情节，快速读懂它在讲什么。"
     )
 
     # Ordered plot events (by chapter order, then order_hint) for a story direction.
@@ -289,6 +384,7 @@ def _fake_summary(registry, chapters, communities, community_labels, id_to_name,
 
     layered = LayeredSummary(
         one_liner=one_liner,
+        story_hook=story_hook,
         overview=overview,
         arcs=arcs,
         chapters=chapter_summaries,

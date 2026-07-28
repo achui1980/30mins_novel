@@ -175,6 +175,7 @@ a:hover { text-decoration: underline; }
 .grid.cols { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 
 .one-liner { font-size: 20px; font-weight: 600; line-height: 1.5; margin: 0 0 12px; }
+.story-hook { color: #b45309; background: #fffbeb; border-left: 3px solid #f59e0b; padding: 8px 12px; border-radius: 6px; margin: 0 0 12px; line-height: 1.6; }
 .overview { color: #374151; white-space: pre-wrap; }
 
 .char-card .name { font-weight: 700; font-size: 16px; }

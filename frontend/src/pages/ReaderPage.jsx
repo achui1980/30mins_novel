@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Network } from "vis-network/standalone";
-import { getWork, getGraph, graphHtmlUrl, getChapterSummary, getBeats, getBeatStory } from "../api";
+import { getWork, getGraph, graphHtmlUrl, getChapterSummary, getBeats, getBeatStory, getAskHistory, askQuestion } from "../api";
 import { CATEGORY_ORDER, categoryColor } from "../constants";
 
 const TABS = [
@@ -9,6 +9,7 @@ const TABS = [
   { key: "story", label: "故事正片" },
   { key: "arcs", label: "故事脉络" },
   { key: "graph", label: "人物关系" },
+  { key: "ask", label: "问答" },
   { key: "settings", label: "设定卡" },
 ];
 
@@ -68,6 +69,7 @@ export default function ReaderPage() {
       {tab === "story" && <StoryFeature id={id} />}
       {tab === "arcs" && <Arcs ls={ls} id={id} />}
       {tab === "graph" && <GraphTab id={id} />}
+      {tab === "ask" && <AskFeature id={id} />}
       {tab === "settings" && <Settings cards={pkg.setting_cards || []} />}
     </div>
   );
@@ -114,6 +116,78 @@ function Overview({ ls, pkg }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function AskFeature({ id }) {
+  const [history, setHistory] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getAskHistory(id)
+      .then((r) => setHistory(r.history || []))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, [id]);
+
+  async function submit(e) {
+    e.preventDefault();
+    const question = q.trim();
+    if (!question || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await askQuestion(id, question);
+      setHistory((h) => [...h, { question, answer: res.answer, cited: res.cited || [] }]);
+      setQ("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="card">
+        <p className="muted" style={{ margin: 0 }}>
+          基于这本书的知识图谱与情节信息回答你的问题（仅依据已分析内容，不会凭空编造）。
+        </p>
+        <form onSubmit={submit} className="ask-form">
+          <input
+            className="ask-input"
+            type="text"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="例如：主角和反派是什么关系？"
+            disabled={loading}
+          />
+          <button type="submit" className="btn" disabled={loading || !q.trim()}>
+            {loading ? "思考中…" : "提问"}
+          </button>
+        </form>
+        {error && <div className="error-banner" style={{ marginTop: 8 }}>{error}</div>}
+      </div>
+
+      {loaded && history.length === 0 && !loading && (
+        <div className="empty">还没有问答记录，试着问一个问题吧。</div>
+      )}
+
+      <div className="ask-history">
+        {[...history].reverse().map((item, i) => (
+          <div key={i} className="ask-qa card">
+            <p className="ask-q">Q：{item.question}</p>
+            <p className="ask-a">{item.answer}</p>
+            {item.cited && item.cited.length > 0 && (
+              <p className="muted ask-cited">涉及：{item.cited.join("、")}</p>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

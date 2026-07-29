@@ -180,6 +180,44 @@ async def generate_beat_story_route(work_id: str, beat_index: int):
     return {"index": beat_index, "story": story, "cached": False}
 
 
+@router.get("/works/{work_id}/ask")
+async def list_ask_history(work_id: str):
+    """Return the Q&A history for a work."""
+    if store.get_status(work_id) is None:
+        raise HTTPException(404, "作品不存在")
+    return {"history": store.read_ask_history(work_id)}
+
+
+@router.post("/works/{work_id}/ask")
+async def ask_question(work_id: str, payload: dict):
+    """Answer a reader question about the work (cache-first, then LLM)."""
+    if store.get_status(work_id) is None:
+        raise HTTPException(404, "作品不存在")
+    question = (payload or {}).get("question", "")
+    if not question or not question.strip():
+        raise HTTPException(400, "问题不能为空")
+
+    cached = store.find_ask_answer(work_id, question)
+    if cached:
+        return {**cached, "cached": True}
+
+    graph_data = store.read_graph_data(work_id)
+    if not graph_data:
+        raise HTTPException(404, "该作品的知识图谱尚未生成，无法问答")
+
+    spine = store.read_spine(work_id)
+    chapters = store.read_chapters(work_id)
+    meta = store.read_meta(work_id) or {}
+    title = meta.get("title") or work_id
+
+    from .pipeline.ask import answer_question
+
+    result = await asyncio.to_thread(answer_question, title, graph_data, spine, chapters, question)
+    entry = {"question": question.strip(), "answer": result["answer"], "cited": result.get("cited", [])}
+    store.append_ask_entry(work_id, entry)
+    return {**entry, "cached": False}
+
+
 @router.delete("/works/{work_id}")
 async def delete_work(work_id: str):
     if not store.delete_work(work_id):

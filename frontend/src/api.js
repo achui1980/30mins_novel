@@ -65,3 +65,16 @@ export async function getBeatStory(id, beatIndex) {
 export async function deleteWork(id) {
   return json(await fetch(`${BASE}/works/${id}`, { method: "DELETE" }));
 }
+
+export async function getAskHistory(id) {
+  return json(await fetch(`${BASE}/works/${id}/ask`));
+}
+
+export async function askQuestion(id, question) {
+  const res = await fetch(`${BASE}/works/${id}/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  return json(res);
+}

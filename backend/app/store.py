@@ -128,6 +128,51 @@ def write_beat_summary(work_id: str, beat_index: int, summary: str) -> None:
     path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def read_graph_data(work_id: str) -> dict | None:
+    """Return the parsed graph.json {nodes, edges|links, ...}, or None."""
+    path = config.work_dir(work_id) / "graph.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+
+
+def _ask_history_path(work_id: str) -> Path:
+    return config.work_dir(work_id) / "ask_history.json"
+
+
+def read_ask_history(work_id: str) -> list:
+    """Return the Q&A history list [{question, answer, cited}], newest last."""
+    path = _ask_history_path(work_id)
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except (ValueError, OSError):
+        return []
+
+
+def find_ask_answer(work_id: str, question: str) -> dict | None:
+    """Return a cached Q&A entry whose question matches (case/space-insensitive)."""
+    norm = (question or "").strip().lower().replace(" ", "")
+    for entry in read_ask_history(work_id):
+        if (entry.get("question") or "").strip().lower().replace(" ", "") == norm:
+            return entry
+    return None
+
+
+def append_ask_entry(work_id: str, entry: dict) -> None:
+    """Append a Q&A entry to the work's history on disk."""
+    history = read_ask_history(work_id)
+    history.append(entry)
+    path = _ask_history_path(work_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def list_works() -> list[WorkListItem]:
     root = config.DATA_ROOT
     if not root.exists():

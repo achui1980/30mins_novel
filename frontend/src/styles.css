@@ -212,6 +212,18 @@ a:hover { text-decoration: underline; }
 .chapter-acc-arrow { color: var(--muted); flex: none; }
 .chapter-acc-body { padding: 4px 16px 14px; line-height: 1.7; color: var(--text, #1f2937); }
 
+.ask-form { display: flex; gap: 8px; margin-top: 12px; }
+.ask-input {
+  flex: 1; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  font: inherit; background: var(--panel, #fff); color: inherit;
+}
+.ask-input:focus { outline: none; border-color: #6366f1; }
+.ask-history { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.ask-qa { padding: 14px 16px; }
+.ask-q { font-weight: 600; margin: 0 0 8px; }
+.ask-a { margin: 0; line-height: 1.8; white-space: pre-wrap; }
+.ask-cited { margin: 8px 0 0; font-size: 13px; }
+
 .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
 .legend .item { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .legend .swatch { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Network } from "vis-network/standalone";
-import { getWork, getGraph, graphHtmlUrl } from "../api";
+import { getWork, getGraph, graphHtmlUrl, getChapterSummary, getBeats, getBeatStory } from "../api";
 import { CATEGORY_ORDER, categoryColor } from "../constants";
 
 const TABS = [
   { key: "overview", label: "概览" },
+  { key: "story", label: "故事正片" },
   { key: "arcs", label: "故事脉络" },
   { key: "graph", label: "人物关系" },
   { key: "settings", label: "设定卡" },
@@ -64,7 +65,8 @@ export default function ReaderPage() {
       </div>
 
       {tab === "overview" && <Overview ls={ls} pkg={pkg} />}
-      {tab === "arcs" && <Arcs ls={ls} />}
+      {tab === "story" && <StoryFeature id={id} />}
+      {tab === "arcs" && <Arcs ls={ls} id={id} />}
       {tab === "graph" && <GraphTab id={id} />}
       {tab === "settings" && <Settings cards={pkg.setting_cards || []} />}
     </div>
@@ -116,9 +118,121 @@ function Overview({ ls, pkg }) {
   );
 }
 
-function Arcs({ ls }) {
+function StoryFeature({ id }) {
+  const [meta, setMeta] = useState(null); // { main_thread, tone, beats: [{index,title}] }
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState(null);
+  // Per-beat story state: { [index]: { loading, story, error } }
+  const [beatState, setBeatState] = useState({});
+
+  useEffect(() => {
+    getBeats(id).then(setMeta).catch((e) => setError(e.message));
+  }, [id]);
+
+  async function toggleBeat(index) {
+    if (open === index) {
+      setOpen(null);
+      return;
+    }
+    setOpen(index);
+    const existing = beatState[index];
+    if (existing && (existing.story || existing.loading)) return;
+    setBeatState((s) => ({ ...s, [index]: { loading: true } }));
+    try {
+      const res = await getBeatStory(id, index);
+      setBeatState((s) => ({ ...s, [index]: { loading: false, story: res.story } }));
+    } catch (e) {
+      setBeatState((s) => ({ ...s, [index]: { loading: false, error: e.message } }));
+    }
+  }
+
+  if (error) {
+    return (
+      <div className="empty" style={{ lineHeight: 1.8 }}>
+        {error}
+        <div className="muted" style={{ marginTop: 6 }}>
+          （此功能仅对新处理的作品生效，旧作品请重新上传处理体验。）
+        </div>
+      </div>
+    );
+  }
+  if (!meta) {
+    return <div className="empty"><span className="spinner" /> 加载中…</div>;
+  }
+
+  const beats = meta.beats || [];
+  return (
+    <div>
+      <div className="card">
+        {meta.main_thread && <p className="one-liner">主线：{meta.main_thread}</p>}
+        {meta.tone && <p className="muted">讲述基调：{meta.tone}</p>}
+        <p className="muted" style={{ margin: "4px 0 0" }}>
+          点击任意情节节拍，按需生成该段的故事讲述。
+        </p>
+      </div>
+
+      {beats.length === 0 ? (
+        <div className="empty">未生成情节节拍</div>
+      ) : (
+        <div className="chapter-acc">
+          {beats.map((b) => {
+            const isOpen = open === b.index;
+            const st = beatState[b.index] || {};
+            return (
+              <div key={b.index} className="chapter-acc-item">
+                <button
+                  type="button"
+                  className={"chapter-acc-head" + (isOpen ? " open" : "")}
+                  onClick={() => toggleBeat(b.index)}
+                >
+                  <span className="chapter-acc-name">
+                    {b.index + 1}. {b.title}
+                  </span>
+                  <span className="chapter-acc-arrow">{isOpen ? "▾" : "▸"}</span>
+                </button>
+                {isOpen && (
+                  <div className="chapter-acc-body">
+                    {st.loading && <span><span className="spinner" /> 生成中…</span>}
+                    {st.error && <span className="error-banner">{st.error}</span>}
+                    {!st.loading && !st.error && (st.story || "（暂无内容）")}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Arcs({ ls, id }) {
   const arcs = ls.arcs || [];
   const chapters = ls.chapters || [];
+  const [openCh, setOpenCh] = useState(null);
+  // Per-chapter generated summary state: { [i]: { loading, summary, error } }
+  const [chState, setChState] = useState({});
+
+  async function toggleChapter(i, chapter) {
+    if (openCh === i) {
+      setOpenCh(null);
+      return;
+    }
+    setOpenCh(i);
+    const existing = chState[i];
+    // If chapter already carries a summary (older works), or already fetched, skip.
+    if ((chapter.summary && chapter.summary.trim()) || (existing && (existing.summary || existing.loading))) {
+      return;
+    }
+    setChState((s) => ({ ...s, [i]: { loading: true } }));
+    try {
+      const res = await getChapterSummary(id, chapter.chapter);
+      setChState((s) => ({ ...s, [i]: { loading: false, summary: res.summary } }));
+    } catch (e) {
+      setChState((s) => ({ ...s, [i]: { loading: false, error: e.message } }));
+    }
+  }
+
   return (
     <div>
       <h2 className="section-title">情节线</h2>
@@ -141,12 +255,32 @@ function Arcs({ ls }) {
       {chapters.length > 0 && (
         <>
           <h2 className="section-title">章节摘要</h2>
-          <div className="card">
-            {chapters.map((c, i) => (
-              <div key={i} className="chapter-row">
-                <span className="ch">{c.chapter}</span> — {c.summary}
-              </div>
-            ))}
+          <p className="muted" style={{ margin: "0 0 8px" }}>点击章节，按需生成该章摘要</p>
+          <div className="chapter-acc">
+            {chapters.map((c, i) => {
+              const open = openCh === i;
+              const st = chState[i] || {};
+              const body = (c.summary && c.summary.trim()) || st.summary;
+              return (
+                <div key={i} className="chapter-acc-item">
+                  <button
+                    type="button"
+                    className={"chapter-acc-head" + (open ? " open" : "")}
+                    onClick={() => toggleChapter(i, c)}
+                  >
+                    <span className="chapter-acc-name">{c.title || c.chapter}</span>
+                    <span className="chapter-acc-arrow">{open ? "▾" : "▸"}</span>
+                  </button>
+                  {open && (
+                    <div className="chapter-acc-body">
+                      {st.loading && <span><span className="spinner" /> 生成中…</span>}
+                      {st.error && <span className="error-banner">{st.error}</span>}
+                      {!st.loading && !st.error && (body || "（暂无摘要）")}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </>
       )}

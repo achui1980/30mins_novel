@@ -73,6 +73,15 @@ async def run_pipeline(
             title = novel.title
             status.title = title
         chapter_ids = [c.id for c in novel.chapters]
+        chapter_titles = novel.chapter_titles
+        # Persist per-chapter source text so chapter summaries can be generated
+        # on demand later (registry/events are in-memory only and not saved).
+        chapters_payload = {
+            c.id: {"title": c.title, "text": c.text} for c in novel.chapters
+        }
+        (config.work_dir(work_id) / "chapters.json").write_text(
+            json.dumps(chapters_payload, ensure_ascii=False), encoding="utf-8"
+        )
         status.message = f"解析完成，共 {len(novel.chapters)} 章"
         write_status(status)
 
@@ -130,14 +139,22 @@ async def run_pipeline(
         status.message = "正在生成分层摘要与设定卡…"
         write_status(status)
 
-        layered, setting_cards = summarize(
+        layered, setting_cards, spine_payload = summarize(
             registry,
             chapter_ids,
             artifacts.communities,
             artifacts.community_labels,
             artifacts.id_to_label,
             title,
+            chapter_titles,
         )
+
+        # Persist the 编导纲要 so the 故事正片 tab can expand beats on demand later.
+        if spine_payload and spine_payload.get("key_beats"):
+            (wdir / "spine.json").write_text(
+                json.dumps(spine_payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
 
         main_characters = _build_main_characters(artifacts, registry)
         suggested = _build_suggested_questions(artifacts)

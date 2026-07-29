@@ -33,6 +33,11 @@ class ParsedNovel:
     def total_chars(self) -> int:
         return sum(len(c.text) for c in self.chapters)
 
+    @property
+    def chapter_titles(self) -> dict[str, str]:
+        """Map chapter id (e.g. 'ch0001') -> human title (e.g. '第一回')."""
+        return {c.id: c.title for c in self.chapters}
+
 
 class ParseError(Exception):
     """Raised when an upload cannot be parsed into text."""

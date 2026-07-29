@@ -112,6 +112,7 @@ class SettingCard(BaseModel):
 
 class ChapterSummary(BaseModel):
     chapter: str
+    title: str = ""
     summary: str
 
 

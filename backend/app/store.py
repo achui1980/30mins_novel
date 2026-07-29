@@ -61,6 +61,73 @@ def graph_html_path(work_id: str) -> Path:
     return config.work_dir(work_id) / "graph.html"
 
 
+def read_chapters(work_id: str) -> dict | None:
+    """Return {chapter_id: {title, text}} persisted at parse time, or None."""
+    path = config.work_dir(work_id) / "chapters.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _chapter_summaries_path(work_id: str) -> Path:
+    return config.work_dir(work_id) / "chapter_summaries.json"
+
+
+def read_chapter_summaries(work_id: str) -> dict:
+    """Return the on-demand chapter-summary cache {chapter_id: summary}."""
+    path = _chapter_summaries_path(work_id)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return {}
+
+
+def write_chapter_summary(work_id: str, chapter_id: str, summary: str) -> None:
+    """Cache a generated chapter summary to disk (merge into existing map)."""
+    cache = read_chapter_summaries(work_id)
+    cache[chapter_id] = summary
+    self_path = _chapter_summaries_path(work_id)
+    self_path.parent.mkdir(parents=True, exist_ok=True)
+    self_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def read_spine(work_id: str) -> dict | None:
+    """Return the persisted 编导纲要 {main_thread,tone,protagonists,key_beats,timeline_text}, or None."""
+    path = config.work_dir(work_id) / "spine.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+
+
+def _beat_summaries_path(work_id: str) -> Path:
+    return config.work_dir(work_id) / "beat_summaries.json"
+
+
+def read_beat_summaries(work_id: str) -> dict:
+    """Return the on-demand beat-story cache {beat_index(str): story}."""
+    path = _beat_summaries_path(work_id)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return {}
+
+
+def write_beat_summary(work_id: str, beat_index: int, summary: str) -> None:
+    """Cache a generated beat story to disk (merge into existing map)."""
+    cache = read_beat_summaries(work_id)
+    cache[str(beat_index)] = summary
+    path = _beat_summaries_path(work_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def list_works() -> list[WorkListItem]:
     root = config.DATA_ROOT
     if not root.exists():

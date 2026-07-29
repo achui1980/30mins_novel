@@ -44,6 +44,24 @@ export function graphHtmlUrl(id) {
   return `${BASE}/works/${id}/graph.html`;
 }
 
+export async function getChapterSummary(id, chapterId) {
+  const res = await fetch(`${BASE}/works/${id}/chapters/${chapterId}/summary`, {
+    method: "POST",
+  });
+  return json(res);
+}
+
+export async function getBeats(id) {
+  return json(await fetch(`${BASE}/works/${id}/beats`));
+}
+
+export async function getBeatStory(id, beatIndex) {
+  const res = await fetch(`${BASE}/works/${id}/beats/${beatIndex}/story`, {
+    method: "POST",
+  });
+  return json(res);
+}
+
 export async function deleteWork(id) {
   return json(await fetch(`${BASE}/works/${id}`, { method: "DELETE" }));
 }

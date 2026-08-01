@@ -146,6 +146,16 @@ class SuggestedQuestion(BaseModel):
     rationale: str = ""
 
 
+class TimelineEvent(BaseModel):
+    """One flattened, chapter-tagged plot event for the interactive timeline (design §4.3)."""
+
+    seq: int
+    chapter_id: str
+    chapter_title: str
+    summary: str
+    participants: list[str] = Field(default_factory=list)
+
+
 class WorkPackage(BaseModel):
     work_id: str
     title: str

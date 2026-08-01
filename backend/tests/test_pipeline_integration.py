@@ -72,6 +72,15 @@ def test_pipeline_end_to_end(temp_data_root):
     assert "node_type" in node
     assert "mention_count" in node
 
+    # events.json must be persisted right after extraction (design §4.3) so
+    # timeline data survives even if a later phase (summarize) fails.
+    events_path = config.work_dir(work_id) / "events.json"
+    assert events_path.exists(), "events.json was not persisted"
+    events = json.loads(events_path.read_text(encoding="utf-8"))
+    assert isinstance(events, list)
+    assert events, "no events persisted"
+    assert all({"summary", "chapter", "participants", "order_hint"} <= set(e.keys()) for e in events)
+
     # summary.json -> valid WorkPackage.
     pkg = store.get_package(work_id)
     assert pkg is not None
@@ -82,6 +91,13 @@ def test_pipeline_end_to_end(temp_data_root):
     assert pkg.layered_summary.arcs, "no arcs (communities) produced"
     assert pkg.setting_cards, "no setting cards produced"
     assert pkg.main_characters, "no main characters produced"
+
+    # Suggested questions must be real, plot-grounded questions (design §4.2) —
+    # not graphify's code-review-oriented output, and not empty/decorative.
+    assert pkg.suggested_questions, "no suggested questions produced"
+    joined_questions = " ".join(q.question for q in pkg.suggested_questions)
+    for bad_kw in ("模块", "拆分", "重构", "split", "module", "refactor"):
+        assert bad_kw not in joined_questions
 
 
 def test_pipeline_rejects_empty_novel(temp_data_root):

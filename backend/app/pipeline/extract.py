@@ -28,13 +28,20 @@ SYSTEM_PROMPT = (
     "你是一个小说信息抽取引擎。给定一段小说正文，抽取其中的人物、地点、事件和人物关系，"
     "并严格按照给定的结构化 schema 返回。要求：\n"
     "- 人物 name 使用最正式/最常用的称呼，把绰号代称放进 aliases。\n"
+    "- 地点抽取要克制：只抽取对情节有实际作用、被反复提及或承载关键事件的地点，"
+    "忽略一次性出现、无情节意义的泛化地名（如路过的某条街、某个房间），"
+    "避免地点数量远超人物数量。\n"
     "- 关系 category 必须是以下之一：家人, 爱人, 朋友, 敌人, 师徒, 主仆, 同盟, 其他。\n"
     "- 关系必须给出简短 detail 与原文 evidence，并估计 confidence(0-1)。\n"
     "- 只抽取文中明确出现或强烈暗示的信息，不要编造。"
 )
 
 QUICK_HINT = "\n注意：当前为【快速】档，只需抽取主要角色、主线关系与关键事件，忽略龙套与次要地点。"
-COMPLETE_HINT = "\n注意：当前为【完整】档，尽量抽取全部人物、地点、事件与关系。"
+COMPLETE_HINT = (
+    "\n注意：当前为【完整】档，尽量抽取全部人物、事件与关系；"
+    "地点仍需遵守上述克制标准——只保留反复出现或承载关键情节的地点，"
+    "不要因为是【完整】档就无差别地为每个提到的地名创建节点。"
+)
 
 
 def _build_prompt(block: Block, known_entities: str, granularity: str) -> str:
@@ -78,8 +85,14 @@ def fake_extract_block(block: Block) -> ChunkExtraction:
     Heuristic: treat the most frequent 2-4 char CJK tokens in the block as
     characters, and pair consecutive distinct characters as 'friend' relations.
     This is *not* accurate but produces a well-formed graph for demos/tests.
+
+    The next 1-2 ranked (non-overlapping) candidates beyond the top-5
+    characters become Place objects, reusing the same frequency ranking —
+    this keeps the offline/fake path exercising the same place-filtering UI
+    (design §4.1) that real extraction produces, without any semantic
+    place-detection logic.
     """
-    from ..models import Character, Event, Relationship, RelationCategory
+    from ..models import Character, Event, Place, Relationship, RelationCategory
 
     # Count every 2-, 3- and 4-char CJK substring (sliding window) so repeated
     # names surface regardless of surrounding punctuation/particles. We then
@@ -95,16 +108,21 @@ def fake_extract_block(block: Block) -> ChunkExtraction:
     # Rank by (frequency, length) so longer, more-frequent names win.
     ranked = sorted(counts.items(), key=lambda kv: (kv[1], len(kv[0])), reverse=True)
     top: list[str] = []
+    place_candidates: list[str] = []
     for name, cnt in ranked:
         if cnt < 2:
             continue
-        # Skip candidates that are substrings of an already-selected name.
-        if any(name in chosen or chosen in name for chosen in top):
+        chosen_so_far = top + place_candidates
+        if any(name in chosen or chosen in name for chosen in chosen_so_far):
             continue
-        top.append(name)
-        if len(top) >= 5:
+        if len(top) < 5:
+            top.append(name)
+        elif len(place_candidates) < 2:
+            place_candidates.append(name)
+        if len(top) >= 5 and len(place_candidates) >= 2:
             break
     characters = [Character(name=n, description=f"在{block.chapter_title}中出现") for n in top]
+    places = [Place(name=n, description=f"在{block.chapter_title}中提及的地点") for n in place_candidates]
 
     relationships = []
     for a, b in zip(top, top[1:]):
@@ -128,7 +146,7 @@ def fake_extract_block(block: Block) -> ChunkExtraction:
                 order_hint=block.order,
             )
         )
-    return ChunkExtraction(characters=characters, relationships=relationships, events=events)
+    return ChunkExtraction(characters=characters, places=places, relationships=relationships, events=events)
 
 
 # ---------------------------------------------------------------------------

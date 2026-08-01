@@ -78,3 +78,7 @@ export async function askQuestion(id, question) {
   });
   return json(res);
 }
+
+export async function getTimeline(id) {
+  return json(await fetch(`${BASE}/works/${id}/timeline`));
+}

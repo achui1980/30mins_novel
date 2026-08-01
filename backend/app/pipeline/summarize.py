@@ -23,6 +23,7 @@ from ..models import (
     ChapterSummary,
     LayeredSummary,
     SettingCard,
+    SuggestedQuestion,
 )
 from .merge import EntityRegistry
 
@@ -370,8 +371,12 @@ def summarize(
     id_to_name: dict,
     title: str,
     chapter_titles: Optional[dict] = None,
-) -> tuple[LayeredSummary, list[SettingCard], Optional[dict]]:
-    """Return (LayeredSummary, setting_cards, spine_payload).
+) -> tuple[LayeredSummary, list[SettingCard], list[SuggestedQuestion], Optional[dict]]:
+    """Return (LayeredSummary, setting_cards, suggested_questions, spine_payload).
+
+    suggested_questions are 3-5 plot-grounded questions the reader can have
+    truthfully answered via the agentic Q&A tab (design §4.2) — replacing
+    graphify's code-review-oriented analyze.suggest_questions output.
 
     spine_payload is the 编导纲要 (main_thread/tone/protagonists/key_beats/timeline_text)
     used to power the on-demand "故事正片" beat narration, or None if unavailable.
@@ -474,7 +479,32 @@ def _llm_summary(registry, chapters, communities, community_labels, id_to_name, 
     except Exception:  # noqa: BLE001
         logger.exception("SettingCards generation failed; keeping LLM summary with fallback cards")
         cards = _fake_setting_cards(registry, communities, community_labels)
-    return layered, cards, spine_payload
+
+    # Step 3: 你可能想问——复用同一 agent，基于已经算好的主线/主角/节拍与概述，
+    # 生成能被 agentic Q&A 真正回答的问题，而不是 graphify 的代码审查式问题。
+    # 失败时独立兜底到确定性模板问题，绝不拖累已经生成好的摘要（同 SettingCards 模式）。
+    try:
+        class SuggestedQuestionsSchema(__import__("pydantic").BaseModel):
+            questions: list[SuggestedQuestion]
+
+        questions_prompt = (
+            f"书名：{title}\n\n{spine_block}\n\n"
+            f"故事概述：{layered.overview}\n\n"
+            "请基于以上信息，生成3-5个读者读完这段简介后可能想问、且可以通过阅读小说实际章节内容"
+            "回答的问题（例如人物关系、情节转折、结局走向）。\n"
+            "严格禁止：\n"
+            "- 代码审查风格的问题（例如“是否应该拆分模块/重构”之类，与本书内容无关）；\n"
+            "- 过于主观、开放、无法从原文找到答案的问题（例如“你觉得这本书好看吗”）。\n"
+            "每个问题附一句简短 rationale（说明读者为什么可能想问这个）。"
+        )
+        suggested_questions = _structured_with_retry(
+            agent, SuggestedQuestionsSchema, questions_prompt, what="SuggestedQuestions"
+        ).questions
+    except Exception:  # noqa: BLE001
+        logger.exception("SuggestedQuestions generation failed; falling back to heuristic questions")
+        suggested_questions = _fake_suggested_questions(spine_payload or {})
+
+    return layered, cards, suggested_questions, spine_payload
 
 
 # ---------------------------------------------------------------------------
@@ -574,7 +604,65 @@ def _fake_summary(registry, chapters, communities, community_labels, id_to_name,
         "key_beats": fake_beats,
         "timeline_text": _plot_timeline(registry, chapters),
     }
-    return layered, cards, spine_payload
+    suggested_questions = _fake_suggested_questions(spine_payload)
+    return layered, cards, suggested_questions, spine_payload
+
+
+def _fake_suggested_questions(spine_payload: dict) -> list[SuggestedQuestion]:
+    """Deterministic, template-based suggested questions for offline/tests.
+
+    Grounded in the same spine_payload (protagonists/key_beats/main_thread)
+    used to power the 故事正片 tab, so questions are always about this book's
+    actual plot — never graphify's code-review-style output (design §4.2).
+    """
+    protagonists = spine_payload.get("protagonists") or []
+    key_beats = spine_payload.get("key_beats") or []
+    main_thread = spine_payload.get("main_thread") or ""
+
+    questions: list[SuggestedQuestion] = []
+    if len(protagonists) >= 2:
+        a, b = protagonists[0], protagonists[1]
+        questions.append(
+            SuggestedQuestion(
+                question=f"{a}和{b}之间是什么关系？",
+                rationale=f"{a}与{b}是本书的核心人物。",
+            )
+        )
+    elif protagonists:
+        questions.append(
+            SuggestedQuestion(
+                question=f"{protagonists[0]}在故事里扮演什么角色？",
+                rationale="主角是理解全书情节的起点。",
+            )
+        )
+    if key_beats:
+        questions.append(
+            SuggestedQuestion(
+                question=f"“{key_beats[0]}”这件事是怎么发生的？",
+                rationale="这是故事的开端情节。",
+            )
+        )
+    if len(key_beats) > 1:
+        questions.append(
+            SuggestedQuestion(
+                question=f"“{key_beats[-1]}”之后故事是如何收尾的？",
+                rationale="这是故事走向结局的关键节点。",
+            )
+        )
+    questions.append(
+        SuggestedQuestion(
+            question="这本书最终的结局是什么？",
+            rationale="结局往往是读者最关心的问题。",
+        )
+    )
+    if main_thread:
+        questions.append(
+            SuggestedQuestion(
+                question=f"“{main_thread}”这条主线是如何推进的？",
+                rationale="主线是贯穿全书的核心脉络。",
+            )
+        )
+    return questions[:5]
 
 
 def _fake_setting_cards(registry, communities, community_labels) -> list[SettingCard]:

@@ -17,7 +17,6 @@ from pathlib import Path
 from .. import config
 from ..models import (
     MainCharacter,
-    SuggestedQuestion,
     WorkPackage,
     WorkStatus,
 )
@@ -117,6 +116,12 @@ async def run_pipeline(
         if not registry.characters:
             raise ParseError("未能抽取到任何人物，无法构建图谱")
 
+        # Persist raw events immediately after extraction (before graph/summarize)
+        # so timeline data survives even if a later phase fails (design §4.3).
+        (config.work_dir(work_id) / "events.json").write_text(
+            json.dumps(registry.events, ensure_ascii=False), encoding="utf-8"
+        )
+
         # 4. Build graph -----------------------------------------------------
         status.phase = "building"
         status.progress = 1.0
@@ -139,7 +144,7 @@ async def run_pipeline(
         status.message = "正在生成分层摘要与设定卡…"
         write_status(status)
 
-        layered, setting_cards, spine_payload = summarize(
+        layered, setting_cards, suggested_questions, spine_payload = summarize(
             registry,
             chapter_ids,
             artifacts.communities,
@@ -157,7 +162,6 @@ async def run_pipeline(
             )
 
         main_characters = _build_main_characters(artifacts, registry)
-        suggested = _build_suggested_questions(artifacts)
 
         package = WorkPackage(
             work_id=work_id,
@@ -167,7 +171,7 @@ async def run_pipeline(
             setting_cards=setting_cards,
             graph_ref="graph.json",
             main_characters=main_characters,
-            suggested_questions=suggested,
+            suggested_questions=suggested_questions,
         )
         (wdir / "summary.json").write_text(
             package.model_dump_json(indent=2), encoding="utf-8"
@@ -209,24 +213,4 @@ def _build_main_characters(artifacts, registry: EntityRegistry) -> list[MainChar
                 mention_count=rec.mention_count if rec else 0,
             )
         )
-    return out
-
-
-def _build_suggested_questions(artifacts) -> list[SuggestedQuestion]:
-    out: list[SuggestedQuestion] = []
-    for q in artifacts.suggested_questions:
-        if isinstance(q, dict):
-            # graphify may emit a placeholder like
-            # {"type": "no_signal", "question": None, "why": ...} when it has
-            # no basis for questions — skip those instead of stringifying.
-            if q.get("type") == "no_signal" or not q.get("question") and not q.get("text"):
-                continue
-            question = q.get("question") or q.get("text")
-            rationale = q.get("rationale") or q.get("reason") or q.get("why") or ""
-        else:
-            question = str(q).strip()
-            rationale = ""
-        if not question:
-            continue
-        out.append(SuggestedQuestion(question=question, rationale=rationale))
     return out

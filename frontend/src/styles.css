@@ -228,6 +228,9 @@ a:hover { text-decoration: underline; }
 .legend .item { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .legend .swatch { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
 
+.graph-controls { margin-bottom: 12px; font-size: 13px; color: var(--muted); }
+.graph-controls label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
 #graph { height: 560px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .graph-detail {
   margin-top: 14px; padding: 14px 16px; border-radius: 12px;
@@ -237,7 +240,19 @@ a:hover { text-decoration: underline; }
 .evidence { font-style: italic; color: #4b5563; border-left: 3px solid var(--line); padding-left: 10px; margin-top: 8px; }
 
 .questions { margin-top: 22px; }
-.q-item { padding: 10px 0; border-top: 1px dashed var(--line); }
+.q-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 10px 0;
+  border-top: 1px dashed var(--line);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.q-item:hover .q { color: var(--accent-ink); text-decoration: underline; }
 .q-item .q { font-weight: 600; }
 .q-item .r { color: var(--muted); font-size: 13px; }
 
@@ -249,3 +264,18 @@ a:hover { text-decoration: underline; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .row-actions { display: flex; gap: 8px; align-items: center; }
 .empty { color: var(--muted); text-align: center; padding: 30px; }
+
+.timeline-track { display: flex; gap: 20px; overflow-x: auto; padding: 8px 4px 16px; }
+.timeline-chapter-group { flex: none; display: flex; flex-direction: column; gap: 8px; min-width: 220px; }
+.timeline-chapter-label {
+  font-size: 13px; font-weight: 700; color: var(--accent-ink);
+  background: #faf5ff; border-radius: 6px; padding: 4px 10px; display: inline-block; width: fit-content;
+}
+.timeline-chapter-events { display: flex; gap: 10px; }
+.timeline-card {
+  flex: none; width: 180px; text-align: left; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  font: inherit; color: inherit; cursor: pointer; line-height: 1.5; box-shadow: var(--shadow);
+}
+.timeline-card:hover { border-color: var(--accent); }
+.timeline-card.active { border-color: var(--accent); background: #faf5ff; }

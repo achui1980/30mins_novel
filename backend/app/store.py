@@ -69,6 +69,18 @@ def read_chapters(work_id: str) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def read_events(work_id: str) -> list | None:
+    """Return the persisted raw event list (see EntityRegistry.events), or None."""
+    path = config.work_dir(work_id) / "events.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else None
+    except (ValueError, OSError):
+        return None
+
+
 def _chapter_summaries_path(work_id: str) -> Path:
     return config.work_dir(work_id) / "chapter_summaries.json"
 

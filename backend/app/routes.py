@@ -107,6 +107,22 @@ async def get_graph_html(work_id: str):
     return FileResponse(path, media_type="text/html")
 
 
+@router.get("/works/{work_id}/timeline")
+async def get_timeline(work_id: str):
+    """Return the interactive timeline (design §4.3): flattened, chapter-ordered events."""
+    if store.get_status(work_id) is None:
+        raise HTTPException(404, "作品不存在")
+    events = store.read_events(work_id)
+    if events is None:
+        raise HTTPException(404, "该作品未生成时间线数据（请重新处理该作品以体验此功能）")
+    chapters = store.read_chapters(work_id) or {}
+
+    from .pipeline.timeline import build_timeline
+
+    timeline = build_timeline(events, chapters)
+    return {"work_id": work_id, "events": [e.model_dump() for e in timeline]}
+
+
 @router.post("/works/{work_id}/chapters/{chapter_id}/summary")
 async def generate_chapter_summary(work_id: str, chapter_id: str):
     """Generate (or return cached) a summary for a single chapter, on demand."""

@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Network } from "vis-network/standalone";
-import { getWork, getGraph, graphHtmlUrl, getChapterSummary, getBeats, getBeatStory, getAskHistory, askQuestion } from "../api";
+import { getWork, getGraph, graphHtmlUrl, getChapterSummary, getBeats, getBeatStory, getAskHistory, askQuestion, getTimeline } from "../api";
 import { CATEGORY_ORDER, categoryColor } from "../constants";
 
 const TABS = [
   { key: "overview", label: "概览" },
   { key: "story", label: "故事正片" },
   { key: "arcs", label: "故事脉络" },
+  { key: "timeline", label: "时间线" },
   { key: "graph", label: "人物关系" },
   { key: "ask", label: "问答" },
   { key: "settings", label: "设定卡" },
@@ -18,10 +19,16 @@ export default function ReaderPage() {
   const [pkg, setPkg] = useState(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("overview");
+  const [askSeed, setAskSeed] = useState(null); // { question, nonce } | null
 
   useEffect(() => {
     getWork(id).then(setPkg).catch((e) => setError(e.message));
   }, [id]);
+
+  function askAbout(question) {
+    setAskSeed({ question, nonce: Date.now() });
+    setTab("ask");
+  }
 
   if (error) {
     return (
@@ -65,17 +72,18 @@ export default function ReaderPage() {
         ))}
       </div>
 
-      {tab === "overview" && <Overview ls={ls} pkg={pkg} />}
+      {tab === "overview" && <Overview ls={ls} pkg={pkg} onAsk={askAbout} />}
       {tab === "story" && <StoryFeature id={id} />}
       {tab === "arcs" && <Arcs ls={ls} id={id} />}
+      {tab === "timeline" && <TimelineTab id={id} />}
       {tab === "graph" && <GraphTab id={id} />}
-      {tab === "ask" && <AskFeature id={id} />}
+      {tab === "ask" && <AskFeature id={id} seed={askSeed} />}
       {tab === "settings" && <Settings cards={pkg.setting_cards || []} />}
     </div>
   );
 }
 
-function Overview({ ls, pkg }) {
+function Overview({ ls, pkg, onAsk }) {
   const mains = pkg.main_characters || [];
   const questions = pkg.suggested_questions || [];
   return (
@@ -105,13 +113,18 @@ function Overview({ ls, pkg }) {
 
       {questions.length > 0 && (
         <div className="questions">
-          <h2 className="section-title">你可能想问（展示用）</h2>
+          <h2 className="section-title">你可能想问</h2>
           <div className="card">
             {questions.map((q, i) => (
-              <div key={i} className="q-item">
+              <button
+                key={i}
+                type="button"
+                className="q-item"
+                onClick={() => onAsk(q.question)}
+              >
                 <div className="q">{q.question}</div>
                 {q.rationale && <div className="r">{q.rationale}</div>}
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -120,35 +133,60 @@ function Overview({ ls, pkg }) {
   );
 }
 
-function AskFeature({ id }) {
+function AskFeature({ id, seed }) {
   const [history, setHistory] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Tracks the most recently *handled* seed nonce so the seed effect below
+  // only calls runAsk once per distinct click, even though it re-runs on
+  // every render where `loaded` or `seed` changes.
+  const lastHandledNonceRef = useRef(null);
 
   useEffect(() => {
     getAskHistory(id)
-      .then((r) => setHistory(r.history || []))
+      .then((r) => {
+        setHistory(r.history || []);
+      })
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, [id]);
 
-  async function submit(e) {
-    e.preventDefault();
-    const question = q.trim();
+  async function runAsk(questionText) {
+    const question = (questionText || "").trim();
     if (!question || loading) return;
     setLoading(true);
     setError("");
     try {
       const res = await askQuestion(id, question);
-      setHistory((h) => [...h, { question, answer: res.answer, cited: res.cited || [] }]);
+      const entry = { question, answer: res.answer, cited: res.cited || [] };
+      setHistory((h) => [...h, entry]);
       setQ("");
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  }
+
+  // A "seed" question (design §4.2c: click a suggested question -> jump here
+  // and auto-submit). `nonce` changes on every click so re-clicking the same
+  // question re-submits it instead of being a no-op. Gated on `loaded` so
+  // this can only fire after the mount-time history load above has settled
+  // (success or failure) — this eliminates the race with that load entirely,
+  // rather than reconciling its outcome after the fact.
+  useEffect(() => {
+    if (loaded && seed && seed.nonce !== lastHandledNonceRef.current) {
+      lastHandledNonceRef.current = seed.nonce;
+      runAsk(seed.question);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed, loaded]);
+
+  async function submit(e) {
+    e.preventDefault();
+    await runAsk(q);
   }
 
   return (
@@ -362,6 +400,84 @@ function Arcs({ ls, id }) {
   );
 }
 
+function TimelineTab({ id }) {
+  const [events, setEvents] = useState(null);
+  const [error, setError] = useState("");
+  const [selected, setSelected] = useState(null);
+
+  useEffect(() => {
+    getTimeline(id)
+      .then((r) => setEvents(r.events || []))
+      .catch((e) => setError(e.message));
+  }, [id]);
+
+  if (error) {
+    return (
+      <div className="empty" style={{ lineHeight: 1.8 }}>
+        {error}
+        <div className="muted" style={{ marginTop: 6 }}>
+          （此功能仅对新处理的作品生效，旧作品请重新上传处理体验。）
+        </div>
+      </div>
+    );
+  }
+  if (!events) {
+    return <div className="empty"><span className="spinner" /> 加载中…</div>;
+  }
+  if (events.length === 0) {
+    return <div className="empty">未生成任何情节事件</div>;
+  }
+
+  // Group consecutive events by chapter so we can render a chapter-title
+  // band above each chapter's run of event cards on the horizontal track.
+  const groups = [];
+  for (const e of events) {
+    const last = groups[groups.length - 1];
+    if (last && last.chapter_id === e.chapter_id) {
+      last.events.push(e);
+    } else {
+      groups.push({ chapter_id: e.chapter_id, chapter_title: e.chapter_title, events: [e] });
+    }
+  }
+
+  return (
+    <div>
+      <p className="muted" style={{ margin: "0 0 12px" }}>
+        按章节顺序排列的关键情节事件，横向滚动查看，点击卡片展开详情。
+      </p>
+      <div className="timeline-track">
+        {groups.map((g, gi) => (
+          <div key={gi} className="timeline-chapter-group">
+            <div className="timeline-chapter-label">{g.chapter_title}</div>
+            <div className="timeline-chapter-events">
+              {g.events.map((e) => (
+                <button
+                  key={e.seq}
+                  type="button"
+                  className={`timeline-card${selected?.seq === e.seq ? " active" : ""}`}
+                  onClick={() => setSelected(selected?.seq === e.seq ? null : e)}
+                >
+                  {e.summary}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {selected && (
+        <div className="graph-detail">
+          <div className="k">{selected.chapter_title} · 第 {selected.seq + 1} 个事件</div>
+          <div className="desc" style={{ marginTop: 6 }}>{selected.summary}</div>
+          {selected.participants.length > 0 && (
+            <div className="members" style={{ marginTop: 6 }}>参与者：{selected.participants.join("、")}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Settings({ cards }) {
   if (cards.length === 0) return <div className="empty">暂无设定卡</div>;
   return (
@@ -378,11 +494,14 @@ function Settings({ cards }) {
   );
 }
 
+const PLACE_TOP_N = 15;
+
 function GraphTab({ id }) {
   const containerRef = useRef(null);
   const [graph, setGraph] = useState(null);
   const [error, setError] = useState("");
   const [detail, setDetail] = useState(null);
+  const [showAllPlaces, setShowAllPlaces] = useState(false);
 
   useEffect(() => {
     getGraph(id).then(setGraph).catch((e) => setError(e.message));
@@ -394,9 +513,38 @@ function GraphTab({ id }) {
     return graph.edges || graph.links || [];
   }, [graph]);
 
+  const placeCount = useMemo(() => {
+    if (!graph) return 0;
+    return (graph.nodes || []).filter((n) => n.node_type === "place").length;
+  }, [graph]);
+
   useEffect(() => {
     if (!graph || !containerRef.current) return;
-    const nodes = (graph.nodes || []).map((n) => ({
+    const rawNodes = graph.nodes || [];
+
+    // Degree = number of edges touching a node. We filter places by degree
+    // (not mention_count) because a place mentioned often but never linked
+    // to anything is still visual noise (design §4.1b).
+    const degree = {};
+    for (const e of edges) {
+      degree[e.source] = (degree[e.source] || 0) + 1;
+      degree[e.target] = (degree[e.target] || 0) + 1;
+    }
+
+    let visibleNodes = rawNodes;
+    if (!showAllPlaces) {
+      const characters = rawNodes.filter((n) => n.node_type !== "place");
+      const places = rawNodes.filter((n) => n.node_type === "place");
+      const topPlaces = [...places]
+        .sort((a, b) => (degree[b.id] || 0) - (degree[a.id] || 0))
+        .slice(0, PLACE_TOP_N);
+      visibleNodes = [...characters, ...topPlaces];
+    }
+    // Filtered-out nodes are fully excluded (not just hidden) so the
+    // Barnes-Hut physics engine doesn't waste layout effort on them.
+    const visibleIds = new Set(visibleNodes.map((n) => n.id));
+
+    const nodes = visibleNodes.map((n) => ({
       id: n.id,
       label: n.label,
       shape: n.node_type === "place" ? "box" : "dot",
@@ -407,15 +555,17 @@ function GraphTab({ id }) {
           : undefined,
       _raw: n,
     }));
-    const visEdges = edges.map((e, i) => ({
-      id: `e${i}`,
-      from: e.source,
-      to: e.target,
-      color: { color: categoryColor(e.category) },
-      width: Math.max(1, Math.min(6, e.weight || 1)),
-      arrows: e.directed ? "to" : undefined,
-      _raw: e,
-    }));
+    const visEdges = edges
+      .filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target))
+      .map((e, i) => ({
+        id: `e${i}`,
+        from: e.source,
+        to: e.target,
+        color: { color: categoryColor(e.category) },
+        width: Math.max(1, Math.min(6, e.weight || 1)),
+        arrows: e.directed ? "to" : undefined,
+        _raw: e,
+      }));
 
     const network = new Network(
       containerRef.current,
@@ -441,7 +591,7 @@ function GraphTab({ id }) {
     });
 
     return () => network.destroy();
-  }, [graph, edges]);
+  }, [graph, edges, showAllPlaces]);
 
   if (error) return <div className="error-banner">{error}</div>;
   if (!graph) return <div className="empty"><span className="spinner" /> 加载图谱…</div>;
@@ -456,6 +606,19 @@ function GraphTab({ id }) {
           </span>
         ))}
       </div>
+
+      {placeCount > PLACE_TOP_N && (
+        <div className="graph-controls">
+          <label>
+            <input
+              type="checkbox"
+              checked={showAllPlaces}
+              onChange={(e) => setShowAllPlaces(e.target.checked)}
+            />
+            显示全部地点（共 {placeCount} 个，默认只显示连接最多的 {PLACE_TOP_N} 个）
+          </label>
+        </div>
+      )}
 
       <div id="graph" ref={containerRef} />
 

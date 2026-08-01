@@ -4,12 +4,16 @@ Converts the deduplicated EntityRegistry into graphify's extraction-JSON schema,
 then runs the canonical graphify build pipeline:
 
     build_from_json -> cluster -> score_all -> god_nodes
-                    -> surprising_connections -> suggest_questions
                     -> export.to_json + export.to_html
 
 Custom node/edge fields (node_type, description, category, detail, evidence,
 mention_count, confidence...) are preserved by build_from_json straight into
 graph.json, which is exactly what the reader UI consumes.
+
+Note: graphify's analyze.suggest_questions (betweenness-centrality, code-review
+oriented) is intentionally NOT used — it produces nonsensical questions for
+novel text. Suggested questions are instead generated in summarize.py from the
+already-computed story spine (design §4.2).
 """
 
 from __future__ import annotations
@@ -39,7 +43,6 @@ class GraphArtifacts:
     communities: dict  # community_id -> [node_id, ...]
     community_labels: dict  # community_id -> label
     god_nodes: list  # ranked hub nodes
-    suggested_questions: list
     id_to_label: dict  # node_id -> display label
     label_to_id: dict
 
@@ -193,11 +196,6 @@ def run_graphify(
     else:
         community_labels = _heuristic_labels(communities, G, id_to_name, registry)
 
-    try:
-        suggested = analyze.suggest_questions(G, communities, community_labels, top_n=7) or []
-    except Exception:  # noqa: BLE001
-        suggested = []
-
     graph_json_path.parent.mkdir(parents=True, exist_ok=True)
     to_json(G, communities, str(graph_json_path), force=True, community_labels=community_labels)
 
@@ -218,7 +216,6 @@ def run_graphify(
         communities=communities,
         community_labels=community_labels,
         god_nodes=gods,
-        suggested_questions=suggested,
         id_to_label=id_to_name,
         label_to_id=name_to_id,
     )

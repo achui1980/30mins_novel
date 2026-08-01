@@ -178,5 +178,5 @@ frontend/         React 18 + Vite 5 + vis-network SPA
 data/works/       每个作品的运行时产出 (gitignore)
 docs/             设计文档
   screenshots/      README 界面截图
-test_novel.txt    样例小说
+test_novel.txt    样例小说2
 ```

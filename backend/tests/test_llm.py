@@ -1,7 +1,7 @@
 """Provider configuration + llm dispatch tests (fake mode safe)."""
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app import config
 from app.pipeline import llm
@@ -52,6 +52,7 @@ def test_openai_structured_output_parses_json(monkeypatch):
 
 def test_openai_structured_output_repair_loop(monkeypatch):
     monkeypatch.setattr(config, "LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setattr(config, "EXTRACT_BACKOFF_BASE", 0.001)
     calls = iter(['not json', '{"name": "李四", "age": 40}'])
     monkeypatch.setattr(
         llm, "_openai_completion",
@@ -63,9 +64,42 @@ def test_openai_structured_output_repair_loop(monkeypatch):
 
 def test_openai_structured_output_raises_after_attempts(monkeypatch):
     monkeypatch.setattr(config, "LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setattr(config, "EXTRACT_BACKOFF_BASE", 0.001)
     monkeypatch.setattr(
         llm, "_openai_completion",
         lambda messages, model, max_tokens: "not json",
     )
     with pytest.raises(Exception):
         llm.structured_output(_Dummy, "问", system_prompt="提示", what="t", attempts=2)
+
+
+def test_openai_validation_error_appends_repair(monkeypatch):
+    monkeypatch.setattr(config, "LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setattr(config, "EXTRACT_BACKOFF_BASE", 0.001)
+    seen = []
+
+    def _completion(messages, *, model, max_tokens):
+        seen.append(list(messages))
+        return "not json"
+
+    monkeypatch.setattr(llm, "_openai_completion", _completion)
+    with pytest.raises(ValidationError):
+        llm.structured_output(_Dummy, "问", system_prompt="提示", what="t", attempts=2)
+    assert len(seen) == 2
+    assert seen[1][-1]["content"].startswith("上次输出无法解析")
+
+
+def test_openai_transport_error_does_not_append_repair(monkeypatch):
+    monkeypatch.setattr(config, "LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setattr(config, "EXTRACT_BACKOFF_BASE", 0.001)
+    seen = []
+
+    def _completion(messages, *, model, max_tokens):
+        seen.append(list(messages))
+        raise RuntimeError("api down")
+
+    monkeypatch.setattr(llm, "_openai_completion", _completion)
+    with pytest.raises(RuntimeError):
+        llm.structured_output(_Dummy, "问", system_prompt="提示", what="t", attempts=2)
+    assert len(seen) == 2
+    assert seen[0] == seen[1]

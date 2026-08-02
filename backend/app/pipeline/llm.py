@@ -18,6 +18,8 @@ from __future__ import annotations
 import logging
 import time
 
+from pydantic import ValidationError
+
 from .. import config
 
 logger = logging.getLogger("novel_kg.llm")
@@ -97,12 +99,14 @@ def _bedrock_structured_output(schema, prompt, *, system_prompt, what, attempts)
     raise last_exc
 
 
-def _openai_structured_output(schema, prompt, *, system_prompt, what, attempts):  # pragma: no cover - real call
+def _openai_structured_output(schema, prompt, *, system_prompt, what, attempts):
     """JSON-object structured output for OpenAI-compatible endpoints.
 
     DeepSeek rejects OpenAI's ``json_schema`` response_format (HTTP 400), so we
-    use ``json_object`` and validate client-side with pydantic. On failure we
-    append the parse error and re-prompt (a repair loop).
+    use ``json_object`` and validate client-side with pydantic. On a parse
+    failure (``ValidationError``) we append the parse error and re-prompt (a
+    repair loop); on a transport/other error we just retry with the unchanged
+    messages.
     """
     messages = [
         {"role": "system", "content": system_prompt or ""},
@@ -117,7 +121,7 @@ def _openai_structured_output(schema, prompt, *, system_prompt, what, attempts):
                 max_tokens=config.OPENAI_COMPATIBLE_MAX_TOKENS,
             )
             return schema.model_validate_json(content)
-        except Exception as exc:  # noqa: BLE001
+        except ValidationError as exc:
             last_exc = exc
             logger.warning(
                 "structured_output(%s) attempt %d/%d failed: %s",
@@ -127,6 +131,14 @@ def _openai_structured_output(schema, prompt, *, system_prompt, what, attempts):
                 messages.append(
                     {"role": "user", "content": f"上次输出无法解析：{exc}\n请重新输出符合 schema 的 JSON。"}
                 )
+                time.sleep(config.EXTRACT_BACKOFF_BASE ** (attempt + 1))
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            logger.warning(
+                "structured_output(%s) attempt %d/%d failed: %s",
+                what, attempt + 1, attempts, exc,
+            )
+            if attempt < attempts - 1:
                 time.sleep(config.EXTRACT_BACKOFF_BASE ** (attempt + 1))
     raise last_exc
 

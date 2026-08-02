@@ -123,14 +123,20 @@ NOVEL_KG_USE_FAKE_LLM=1 uvicorn app.main:app --reload
 
 ### 接入 DeepSeek（OpenAI 兼容）
 
+完整变量清单见 `backend/.env.example`（复制为 `backend/.env` 后填入 API key 即可）：
+
+```bash
+cp backend/.env.example backend/.env   # 然后编辑 NOVEL_KG_OPENAI_COMPATIBLE_API_KEY
+```
+
+或用命令行环境变量直接启动：
+
 ```bash
 NOVEL_KG_LLM_PROVIDER=openai_compatible \
 NOVEL_KG_OPENAI_COMPATIBLE_API_KEY=sk-xxx \
 NOVEL_KG_OPENAI_COMPATIBLE_MODEL_ID=deepseek-v4-flash \
 uvicorn app.main:app --reload
 ```
-
-（也可写入 `backend/.env`。）
 
 ### 前端
 

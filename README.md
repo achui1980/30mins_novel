@@ -119,6 +119,7 @@ NOVEL_KG_USE_FAKE_LLM=1 uvicorn app.main:app --reload
 | `NOVEL_KG_OPENAI_COMPATIBLE_MODEL_ID` | 模型 id（如 `deepseek-v4-flash`） | `deepseek-v4-flash` |
 | `NOVEL_KG_OPENAI_COMPATIBLE_THINKING` | 开启 thinking（更慢更贵） | 关闭 |
 | `NOVEL_KG_OPENAI_COMPATIBLE_MAX_TOKENS` | JSON 输出长度上限 | `8192` |
+| `NOVEL_KG_OPENAI_COMPATIBLE_TIMEOUT` | 单次 HTTP 调用超时（秒） | `120` |
 | `NOVEL_KG_DATA_ROOT` | 工作包输出目录 | `<repo>/data/works` |
 
 ### 接入 DeepSeek（OpenAI 兼容）

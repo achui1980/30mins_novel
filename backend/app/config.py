@@ -81,6 +81,10 @@ USE_FAKE_LLM = _env("NOVEL_KG_USE_FAKE_LLM", "0") in {"1", "true", "True", "yes"
 # OpenAIModel. Structured output on that path uses json_object + client-side
 # pydantic validation (DeepSeek rejects OpenAI's json_schema response_format).
 LLM_PROVIDER = _env("NOVEL_KG_LLM_PROVIDER", "bedrock")
+if LLM_PROVIDER not in {"bedrock", "openai_compatible"}:
+    raise ValueError(
+        f"未知的 NOVEL_KG_LLM_PROVIDER={LLM_PROVIDER!r}，可选值：bedrock / openai_compatible"
+    )
 OPENAI_COMPATIBLE_BASE_URL = _env(
     "NOVEL_KG_OPENAI_COMPATIBLE_BASE_URL", "https://api.deepseek.com"
 )
@@ -94,6 +98,11 @@ OPENAI_COMPATIBLE_THINKING = (
 )
 OPENAI_COMPATIBLE_MAX_TOKENS = int(
     _env("NOVEL_KG_OPENAI_COMPATIBLE_MAX_TOKENS", "8192")
+)
+# Seconds before an OpenAI-compatible HTTP call gives up (openai SDK default is
+# 600s; a hung endpoint would otherwise pin a worker thread for 10 minutes).
+OPENAI_COMPATIBLE_TIMEOUT = float(
+    _env("NOVEL_KG_OPENAI_COMPATIBLE_TIMEOUT", "120")
 )
 
 

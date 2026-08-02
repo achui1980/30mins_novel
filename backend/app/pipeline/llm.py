@@ -25,6 +25,11 @@ from .. import config
 logger = logging.getLogger("novel_kg.llm")
 
 
+def _is_deepseek() -> bool:
+    """True when the configured model id belongs to DeepSeek."""
+    return config.OPENAI_COMPATIBLE_MODEL_ID.startswith("deepseek")
+
+
 # ---------------------------------------------------------------------------
 # Model / agent construction
 # ---------------------------------------------------------------------------
@@ -36,12 +41,15 @@ def make_model():  # pragma: no cover - requires LLM creds
         from strands.models.openai import OpenAIModel
 
         params: dict = {}
-        if not config.OPENAI_COMPATIBLE_THINKING:
+        # The `thinking` field is DeepSeek-specific; only send it to DeepSeek.
+        # Non-DeepSeek endpoints may 400 on unknown extra_body fields.
+        if not config.OPENAI_COMPATIBLE_THINKING and _is_deepseek():
             params["extra_body"] = {"thinking": {"type": "disabled"}}
         return OpenAIModel(
             client_args={
                 "api_key": config.OPENAI_COMPATIBLE_API_KEY,
                 "base_url": config.OPENAI_COMPATIBLE_BASE_URL,
+                "timeout": config.OPENAI_COMPATIBLE_TIMEOUT,
             },
             model_id=config.OPENAI_COMPATIBLE_MODEL_ID,
             params=params,
@@ -150,9 +158,11 @@ def _openai_completion(messages, *, model: str, max_tokens: int):  # pragma: no 
     client = OpenAI(
         api_key=config.OPENAI_COMPATIBLE_API_KEY,
         base_url=config.OPENAI_COMPATIBLE_BASE_URL,
+        timeout=config.OPENAI_COMPATIBLE_TIMEOUT,
     )
     extra: dict = {}
-    if not config.OPENAI_COMPATIBLE_THINKING:
+    # The `thinking` field is DeepSeek-specific; only send it to DeepSeek.
+    if not config.OPENAI_COMPATIBLE_THINKING and _is_deepseek():
         extra["extra_body"] = {"thinking": {"type": "disabled"}}
     resp = client.chat.completions.create(
         model=model,

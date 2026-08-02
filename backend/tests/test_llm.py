@@ -29,6 +29,18 @@ def test_thinking_flag_true(monkeypatch):
     assert config.OPENAI_COMPATIBLE_THINKING is True
 
 
+def test_timeout_default(monkeypatch):
+    monkeypatch.setattr(config, "OPENAI_COMPATIBLE_TIMEOUT", 120)
+    assert config.OPENAI_COMPATIBLE_TIMEOUT == 120
+
+
+def test_is_deepseek(monkeypatch):
+    monkeypatch.setattr(config, "OPENAI_COMPATIBLE_MODEL_ID", "deepseek-v4-flash")
+    assert llm._is_deepseek() is True
+    monkeypatch.setattr(config, "OPENAI_COMPATIBLE_MODEL_ID", "moonshot-v1-8k")
+    assert llm._is_deepseek() is False
+
+
 # ---------------------------------------------------------------------------
 # Provider dispatch tests. Monkeypatches _openai_completion; never touches
 # network.

@@ -1,7 +1,8 @@
 """Extraction layer: per-block LLM structured extraction (design §4.2).
 
-Uses AWS Strands ``agent.structured_output(ChunkExtraction, prompt)`` against
-Amazon Bedrock. Concurrency is bounded by a semaphore; failed blocks retry with
+LLM calls are routed through ``pipeline.llm``, a provider-agnostic layer that
+supports Amazon Bedrock (via strands) and OpenAI-compatible endpoints (DeepSeek
+and similar). Concurrency is bounded by a semaphore; failed blocks retry with
 exponential backoff and are ultimately skipped (recorded as a warning) rather
 than failing the whole job.
 
@@ -55,21 +56,18 @@ def _build_prompt(block: Block, known_entities: str, granularity: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Strands / Bedrock backend
+# Provider-backed backend (via pipeline.llm)
 # ---------------------------------------------------------------------------
 
 
-def _make_agent():  # pragma: no cover - requires AWS creds
-    from strands import Agent
-    from strands.models import BedrockModel
+def _extract_block_sync(prompt: str) -> ChunkExtraction:  # pragma: no cover - requires LLM creds
+    """Blocking structured extraction, provider-agnostic."""
+    from .. import llm
 
-    model = BedrockModel(model_id=config.BEDROCK_MODEL_ID, region_name=config.BEDROCK_REGION)
-    return Agent(model=model, system_prompt=SYSTEM_PROMPT)
-
-
-def _extract_block_sync(agent, prompt: str) -> ChunkExtraction:  # pragma: no cover - AWS
-    """Blocking call into Strands structured_output."""
-    return agent.structured_output(ChunkExtraction, prompt)
+    return llm.structured_output(
+        ChunkExtraction, prompt, system_prompt=SYSTEM_PROMPT, what="ChunkExtraction",
+        attempts=1,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -174,9 +172,6 @@ async def extract_all(
         return
 
     use_fake = config.USE_FAKE_LLM
-    agent = None
-    if not use_fake:
-        agent = _make_agent()
 
     sem = asyncio.Semaphore(config.EXTRACT_CONCURRENCY)
     processed = 0
@@ -188,7 +183,7 @@ async def extract_all(
                     if use_fake:
                         return fake_extract_block(block)
                     prompt = _build_prompt(block, known, granularity)
-                    return await asyncio.to_thread(_extract_block_sync, agent, prompt)
+                    return await asyncio.to_thread(_extract_block_sync, prompt)
                 except Exception as exc:  # noqa: BLE001
                     if attempt == config.EXTRACT_MAX_RETRIES - 1:
                         if warn_cb:

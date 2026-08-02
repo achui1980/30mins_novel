@@ -75,6 +75,27 @@ BEDROCK_REGION = _env("NOVEL_KG_BEDROCK_REGION", _env("AWS_REGION", "us-east-1")
 # of calling Bedrock. Used by tests and offline demos.
 USE_FAKE_LLM = _env("NOVEL_KG_USE_FAKE_LLM", "0") in {"1", "true", "True", "yes"}
 
+# --- LLM provider (multi-model) ------------------------------------------
+# "bedrock" keeps the original AWS Strands path; "openai_compatible" points at
+# any OpenAI-compatible endpoint (DeepSeek, Kimi, vLLM, ...) via strands'
+# OpenAIModel. Structured output on that path uses json_object + client-side
+# pydantic validation (DeepSeek rejects OpenAI's json_schema response_format).
+LLM_PROVIDER = _env("NOVEL_KG_LLM_PROVIDER", "bedrock")
+OPENAI_COMPATIBLE_BASE_URL = _env(
+    "NOVEL_KG_OPENAI_COMPATIBLE_BASE_URL", "https://api.deepseek.com"
+)
+OPENAI_COMPATIBLE_API_KEY = _env("NOVEL_KG_OPENAI_COMPATIBLE_API_KEY", "")
+OPENAI_COMPATIBLE_MODEL_ID = _env(
+    "NOVEL_KG_OPENAI_COMPATIBLE_MODEL_ID", "deepseek-v4-flash"
+)
+# DeepSeek V4 defaults to "thinking" mode (slower/costlier). Default OFF.
+OPENAI_COMPATIBLE_THINKING = (
+    _env("NOVEL_KG_OPENAI_COMPATIBLE_THINKING", "0") in {"1", "true", "True", "yes"}
+)
+OPENAI_COMPATIBLE_MAX_TOKENS = int(
+    _env("NOVEL_KG_OPENAI_COMPATIBLE_MAX_TOKENS", "8192")
+)
+
 
 def work_dir(work_id: str) -> Path:
     return DATA_ROOT / work_id

@@ -105,15 +105,32 @@ uvicorn app.main:app --reload        # 服务在 :8000
 NOVEL_KG_USE_FAKE_LLM=1 uvicorn app.main:app --reload
 ```
 
-真实提取走 AWS Bedrock，需要有效凭证。配置通过环境变量（前缀 `NOVEL_KG_`）或
-`backend/.env`（导入时自动加载，已 gitignore）。常用项：
+真实提取走 LLM，可通过环境变量（前缀 `NOVEL_KG_`）切换后端：默认 AWS Bedrock（需要有效凭证），
+也支持 OpenAI 兼容端点（如 DeepSeek）。配置放在 `backend/.env`（导入时自动加载，已 gitignore）。常用项：
 
 | 变量 | 说明 | 默认 |
 | --- | --- | --- |
 | `NOVEL_KG_USE_FAKE_LLM` | 离线模式（`1`/`true`）| 关闭 |
 | `NOVEL_KG_BEDROCK_MODEL_ID` | Bedrock 模型 id | `us.anthropic.claude-sonnet-4-6` |
 | `NOVEL_KG_BEDROCK_REGION` / `AWS_REGION` | Bedrock 区域 | `us-east-1` |
+| `NOVEL_KG_LLM_PROVIDER` | 模型后端：`bedrock` / `openai_compatible` | `bedrock` |
+| `NOVEL_KG_OPENAI_COMPATIBLE_BASE_URL` | OpenAI 兼容 base_url | `https://api.deepseek.com` |
+| `NOVEL_KG_OPENAI_COMPATIBLE_API_KEY` | API key | 空 |
+| `NOVEL_KG_OPENAI_COMPATIBLE_MODEL_ID` | 模型 id（如 `deepseek-v4-flash`） | `deepseek-v4-flash` |
+| `NOVEL_KG_OPENAI_COMPATIBLE_THINKING` | 开启 thinking（更慢更贵） | 关闭 |
+| `NOVEL_KG_OPENAI_COMPATIBLE_MAX_TOKENS` | JSON 输出长度上限 | `8192` |
 | `NOVEL_KG_DATA_ROOT` | 工作包输出目录 | `<repo>/data/works` |
+
+### 接入 DeepSeek（OpenAI 兼容）
+
+```bash
+NOVEL_KG_LLM_PROVIDER=openai_compatible \
+NOVEL_KG_OPENAI_COMPATIBLE_API_KEY=sk-xxx \
+NOVEL_KG_OPENAI_COMPATIBLE_MODEL_ID=deepseek-v4-flash \
+uvicorn app.main:app --reload
+```
+
+（也可写入 `backend/.env`。）
 
 ### 前端
 

@@ -5,9 +5,10 @@ Produces the reader-facing artifacts from the built graph + registry:
   - SettingCard[]: theme / worldview cards
   - community labels: 2-5 word names per community (used by graphify + arcs)
 
-Uses AWS Strands structured_output against Bedrock. When config.USE_FAKE_LLM is
-set, a deterministic fallback derives everything from the registry so the whole
-pipeline runs offline / in tests.
+All real LLM calls route through the ``pipeline.llm`` provider layer, which
+dispatches to AWS Bedrock or an OpenAI-compatible endpoint. When
+config.USE_FAKE_LLM is set, a deterministic fallback derives everything from
+the registry so the whole pipeline runs offline / in tests.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import logging
 from typing import Optional
 
 from .. import config
+from . import llm
 
 logger = logging.getLogger("novel_kg.summarize")
 from ..models import (
@@ -29,7 +31,7 @@ from .merge import EntityRegistry
 
 
 # ---------------------------------------------------------------------------
-# Strands backend
+# LLM backend (via pipeline.llm provider layer)
 # ---------------------------------------------------------------------------
 
 SUMMARY_SYSTEM_PROMPT = (
@@ -143,39 +145,7 @@ def _registry_digest(registry: EntityRegistry, chapters: list[str]) -> str:
     return "\n".join(lines)
 
 
-def _make_summary_agent():  # pragma: no cover - requires AWS creds
-    from strands import Agent
-    from strands.models import BedrockModel
-
-    model = BedrockModel(model_id=config.BEDROCK_MODEL_ID, region_name=config.BEDROCK_REGION)
-    return Agent(model=model, system_prompt=SUMMARY_SYSTEM_PROMPT)
-
-
-def _structured_with_retry(agent, schema, prompt, *, what: str, attempts: int = 3):  # pragma: no cover - AWS
-    """Call agent.structured_output with retries for transient Bedrock errors.
-
-    Bedrock (esp. via streaming) can intermittently raise throttling / transient
-    ResourceNotFound errors. A single such blip previously discarded the whole
-    LLM summary and fell back to the template. Retry with backoff first.
-    """
-    import time
-
-    last_exc = None
-    for attempt in range(attempts):
-        try:
-            return agent.structured_output(schema, prompt)
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            logger.warning(
-                "structured_output(%s) attempt %d/%d failed: %s",
-                what, attempt + 1, attempts, exc,
-            )
-            if attempt < attempts - 1:
-                time.sleep(config.EXTRACT_BACKOFF_BASE ** (attempt + 1))
-    raise last_exc
-
-
-def _story_spine(agent, digest: str, title: str):  # pragma: no cover - AWS
+def _story_spine(digest: str, title: str):  # pragma: no cover - AWS
     """Step 1 of 叙事编导：produce an internal '编导纲要' (not shown to user).
 
     Decides the main thread, the tone (基调), the protagonists and the main-trunk
@@ -203,7 +173,9 @@ def _story_spine(agent, digest: str, title: str):  # pragma: no cover - AWS
         "3. protagonists：谁是真正的主角（1-3人）。\n"
         "4. key_beats：沿主线抽出5-10个主干情节节点，按时间顺序，果断舍弃支线与龙套。"
     )
-    spine = _structured_with_retry(agent, StorySpine, prompt, what="StorySpine")
+    spine = llm.structured_output(
+        StorySpine, prompt, system_prompt=SUMMARY_SYSTEM_PROMPT, what="StorySpine"
+    )
     if spine.tone not in VALID_TONES:
         spine.tone = TONE_LIGHT
     return spine
@@ -252,7 +224,6 @@ def _llm_chapter_summary(title: str, chapter_title: str, body: str) -> str:  # p
     class ChapterBrief(BaseModel):
         summary: str = Field(description="本章的读者向摘要，150-300字")
 
-    agent = _make_summary_agent()
     snippet = body[:MAX_CHAPTER_CHARS]
     prompt = (
         f"书名：{title}\n章节：{chapter_title}\n\n"
@@ -262,7 +233,9 @@ def _llm_chapter_summary(title: str, chapter_title: str, body: str) -> str:  # p
         "说清楚本章发生的关键事件、推动了哪些情节、涉及的主要人物。\n"
         "必须忠于原文，不要虚构原文没有的情节，也不要剧透后续章节。"
     )
-    brief = _structured_with_retry(agent, ChapterBrief, prompt, what="ChapterBrief")
+    brief = llm.structured_output(
+        ChapterBrief, prompt, system_prompt=SUMMARY_SYSTEM_PROMPT, what="ChapterBrief"
+    )
     return (brief.summary or "").strip() or _fake_chapter_summary(chapter_title, body)
 
 
@@ -329,7 +302,9 @@ def _llm_beat_story(title: str, spine: dict, beat_index: int) -> str:  # pragma:
         "把这一段剧情讲得像在给没读过原著的朋友讲故事：说清楚这一拍发生了什么、"
         "涉及哪些人物、和前后剧情如何衔接、对主线有什么推动。只讲这一拍，不要把整本书都讲完。"
     )
-    result = _structured_with_retry(_make_summary_agent(), BeatStory, prompt, what="BeatStory")
+    result = llm.structured_output(
+        BeatStory, prompt, system_prompt=SUMMARY_SYSTEM_PROMPT, what="BeatStory"
+    )
     return (result.story or "").strip() or _fake_beat_story(spine, beat_index)
 
 
@@ -407,7 +382,6 @@ def _llm_labels(communities, id_to_name, registry):  # pragma: no cover - AWS
     class CommunityLabels(BaseModel):
         labels: list[CommunityLabel]
 
-    agent = _make_summary_agent()
     desc_lines = []
     for cid, members in communities.items():
         names = [id_to_name.get(m, m) for m in members][:8]
@@ -416,19 +390,20 @@ def _llm_labels(communities, id_to_name, registry):  # pragma: no cover - AWS
         "以下是按图聚类得到的人物社区，请为每个社区起一个2-5字的情节线或阵营名称：\n"
         + "\n".join(desc_lines)
     )
-    result = agent.structured_output(CommunityLabels, prompt)
+    result = llm.structured_output(
+        CommunityLabels, prompt, system_prompt=SUMMARY_SYSTEM_PROMPT, what="CommunityLabels"
+    )
     return {lbl.community_id: lbl.label for lbl in result.labels}
 
 
 def _llm_summary(registry, chapters, communities, community_labels, id_to_name, title, chapter_titles=None):  # pragma: no cover - AWS
-    agent = _make_summary_agent()
     digest = _registry_digest(registry, chapters)
     timeline_text = _plot_timeline(registry, chapters)
 
     # Step 1: 叙事编导——先定主线与基调（失败则退回中性默认，不影响后续）。
     spine_payload: Optional[dict] = None
     try:
-        spine = _story_spine(agent, digest, title)
+        spine = _story_spine(digest, title)
         tone = spine.tone
         spine_block = _spine_block(spine)
         spine_payload = {
@@ -459,7 +434,9 @@ def _llm_summary(registry, chapters, communities, community_labels, id_to_name, 
         "禁止只罗列人物或关系。\n"
         "- arcs：每条情节线一段摘要，对应下方给出的人物社区。\n"
     )
-    layered = _structured_with_retry(agent, LayeredSummary, prompt, what="LayeredSummary")
+    layered = llm.structured_output(
+        LayeredSummary, prompt, system_prompt=SUMMARY_SYSTEM_PROMPT, what="LayeredSummary"
+    )
 
     # 章节摘要改为“按需生成”：这里只放占位（章节id+标题，summary留空），
     # 由前端点击某章时再调用 /works/{id}/chapters/{ch}/summary 生成。
@@ -475,12 +452,14 @@ def _llm_summary(registry, chapters, communities, community_labels, id_to_name, 
     cards_prompt = f"书名：{title}\n\n{digest}\n\n请生成3-6张设定卡（世界观/主题/关键概念），每张有title与content。"
     # 设定卡失败不应连累已经生成好的分层摘要——单独兜底为假数据卡。
     try:
-        cards = _structured_with_retry(agent, SettingCards, cards_prompt, what="SettingCards").cards
+        cards = llm.structured_output(
+            SettingCards, cards_prompt, system_prompt=SUMMARY_SYSTEM_PROMPT, what="SettingCards"
+        ).cards
     except Exception:  # noqa: BLE001
         logger.exception("SettingCards generation failed; keeping LLM summary with fallback cards")
         cards = _fake_setting_cards(registry, communities, community_labels)
 
-    # Step 3: 你可能想问——复用同一 agent，基于已经算好的主线/主角/节拍与概述，
+    # Step 3: 你可能想问——基于已经算好的主线/主角/节拍与概述，
     # 生成能被 agentic Q&A 真正回答的问题，而不是 graphify 的代码审查式问题。
     # 失败时独立兜底到确定性模板问题，绝不拖累已经生成好的摘要（同 SettingCards 模式）。
     try:
@@ -497,8 +476,11 @@ def _llm_summary(registry, chapters, communities, community_labels, id_to_name, 
             "- 过于主观、开放、无法从原文找到答案的问题（例如“你觉得这本书好看吗”）。\n"
             "每个问题附一句简短 rationale（说明读者为什么可能想问这个）。"
         )
-        suggested_questions = _structured_with_retry(
-            agent, SuggestedQuestionsSchema, questions_prompt, what="SuggestedQuestions"
+        suggested_questions = llm.structured_output(
+            SuggestedQuestionsSchema,
+            questions_prompt,
+            system_prompt=SUMMARY_SYSTEM_PROMPT,
+            what="SuggestedQuestions",
         ).questions
     except Exception:  # noqa: BLE001
         logger.exception("SuggestedQuestions generation failed; falling back to heuristic questions")

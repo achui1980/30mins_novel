@@ -8,3 +8,5 @@ dist/
 .DS_Store
 .env
 .pytest_cache/
+graphify-out/
+.opencode/

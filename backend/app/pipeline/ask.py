@@ -190,7 +190,7 @@ def _agent_answer_question(  # pragma: no cover - AWS
 
 
 def _run_agent_with_retry(agent, prompt, *, attempts: int = 3):  # pragma: no cover - AWS
-    """Invoke the agent with retries for transient Bedrock errors."""
+    """Invoke the agent with retries for transient LLM errors."""
     import time
 
     last_exc = None
@@ -218,11 +218,11 @@ def _fake_answer_question(graph_data: dict, question: str) -> dict:
         answer = (
             f"（离线模式）问题中提到了：{('、'.join(hits))}。"
             "已在知识图谱中定位到这些实体，但离线模式下无法调用工具检索原文，"
-            "请在接入 Bedrock 后再次提问。"
+            "请在接入大模型后再次提问。"
         )
     else:
         answer = (
             "（离线模式）未能在知识图谱中匹配到问题里的实体，"
-            "请在接入 Bedrock 后再次提问以获得完整回答。"
+            "请在接入大模型后再次提问以获得完整回答。"
         )
     return {"answer": answer, "cited": hits}

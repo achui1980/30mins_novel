@@ -64,6 +64,8 @@ def _extract_block_sync(prompt: str) -> ChunkExtraction:  # pragma: no cover - r
     """Blocking structured extraction, provider-agnostic."""
     from .. import llm
 
+    # attempts=1：外层 run_block 循环（EXTRACT_MAX_RETRIES）已有退避重试，
+    # 内层再重试会叠加（4 x 3 = 每个块最多 12 次调用）。
     return llm.structured_output(
         ChunkExtraction, prompt, system_prompt=SYSTEM_PROMPT, what="ChunkExtraction",
         attempts=1,

@@ -22,6 +22,7 @@ import logging
 from typing import Optional
 
 from .. import config
+from . import llm
 
 logger = logging.getLogger("novel_kg.ask")
 
@@ -80,8 +81,7 @@ def _agent_answer_question(  # pragma: no cover - AWS
     chapters: Optional[dict],
     question: str,
 ) -> dict:
-    from strands import Agent, tool
-    from strands.models import BedrockModel
+    from strands import tool
 
     nodes = graph_data.get("nodes") or []
     edges = graph_data.get("edges") or graph_data.get("links") or []
@@ -172,8 +172,7 @@ def _agent_answer_question(  # pragma: no cover - AWS
     if chapter_items:
         tools += [list_chapters, read_chapter, search_text]
 
-    model = BedrockModel(model_id=config.BEDROCK_MODEL_ID, region_name=config.BEDROCK_REGION)
-    agent = Agent(model=model, system_prompt=ASK_SYSTEM_PROMPT, tools=tools)
+    agent = llm.make_agent(ASK_SYSTEM_PROMPT, tools=tools)
 
     hint = ""
     if not chapter_items:

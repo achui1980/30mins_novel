@@ -2,14 +2,14 @@
 // and phase labels for the processing page.
 
 export const CATEGORY_COLORS = {
-  家人: "#e6550d",
-  爱人: "#e7298a",
-  朋友: "#2ca02c",
-  敌人: "#d62728",
-  师徒: "#1f77b4",
-  主仆: "#9467bd",
-  同盟: "#17becf",
-  其他: "#8c8c8c",
+  家人: "#3F5B4E",
+  爱人: "#B33A3A",
+  朋友: "#C9A15B",
+  敌人: "#6B2E2E",
+  师徒: "#4A6FA5",
+  主仆: "#7B6D8D",
+  同盟: "#3F7A6B",
+  其他: "#8C8478",
 };
 
 export const CATEGORY_ORDER = [

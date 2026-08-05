@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import HomePage from "./pages/HomePage.jsx";
 import ProcessingPage from "./pages/ProcessingPage.jsx";
 import ReaderPage from "./pages/ReaderPage.jsx";
-import "./styles.css";
+import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>

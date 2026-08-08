@@ -105,6 +105,24 @@ OPENAI_COMPATIBLE_TIMEOUT = float(
     _env("NOVEL_KG_OPENAI_COMPATIBLE_TIMEOUT", "120")
 )
 
+# --- Arc-parallel extraction ----------------------------------------------
+ARC_BLOCKS_TARGET = int(_env("NOVEL_KG_ARC_BLOCKS_TARGET", "60"))
+MIN_ARC = int(_env("NOVEL_KG_MIN_ARC", "2"))
+MAX_ARC = int(_env("NOVEL_KG_MAX_ARC", "16"))
+ARC_ANCHOR_COUNT = int(_env("NOVEL_KG_ARC_ANCHOR_COUNT", "20"))
+GLOBAL_EXTRACT_CONCURRENCY = int(
+    _env("NOVEL_KG_GLOBAL_EXTRACT_CONCURRENCY", "20")
+)
+STRONG_MODEL_ID = _env("NOVEL_KG_STRONG_MODEL_ID", "")
+STRONG_LLM_PROVIDER = _env(
+    "NOVEL_KG_STRONG_LLM_PROVIDER", LLM_PROVIDER
+)
+if STRONG_LLM_PROVIDER not in {"bedrock", "openai_compatible"}:
+    raise ValueError(
+        f"NOVEL_KG_STRONG_LLM_PROVIDER must be bedrock or openai_compatible, "
+        f"got {STRONG_LLM_PROVIDER!r}"
+    )
+
 
 def work_dir(work_id: str) -> Path:
     return DATA_ROOT / work_id

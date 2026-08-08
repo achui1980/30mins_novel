@@ -13,9 +13,16 @@ injects into the next chunk's prompt so pronouns resolve to existing characters.
 from __future__ import annotations
 
 import difflib
+import logging
+from collections import Counter
 from dataclasses import dataclass, field
 
+from pydantic import BaseModel
+
+from .. import config
 from ..models import Character, ChunkExtraction, Place, Relationship
+
+logger = logging.getLogger('novel_kg.merge')
 
 # Names at/above this ratio are treated as "possibly the same" and sent to the
 # optional LLM normalization step (or auto-merged if it is disabled).
@@ -192,3 +199,210 @@ class EntityRegistry:
         return "已知角色（请把代词/别称解析到这些已有角色，不要重复创建）：\n" + "\n".join(
             f"- {ln}" for ln in lines
         )
+
+
+MERGE_CONFIRM_SIM_MIN = 0.6
+
+
+def _arc_seen(merged, arc_registries) -> dict[str, set[int]]:
+    """Canonical merged name -> set of arc indices it appears in (by name or alias)."""
+    seen: dict[str, set[int]] = {}
+    for arc_idx, arc in enumerate(arc_registries):
+        for rec in arc.characters.values():
+            for name in rec.all_names():
+                canonical = merged._alias_index.get(_norm(name))
+                if canonical is not None:
+                    seen.setdefault(canonical, set()).add(arc_idx)
+    return seen
+
+
+def _find_merge_candidates(merged, arc_registries) -> list[str]:
+    seen = _arc_seen(merged, arc_registries)
+    names = sorted(merged.characters)
+    candidates: set[str] = set()
+    for name in names:
+        if len(seen.get(name, ())) >= 2:
+            candidates.add(name)
+    normed = {name: _norm(name) for name in names}
+    counters = {name: Counter(normed[name]) for name in names}
+    lens = {name: len(normed[name]) for name in names}
+    n = len(names)
+    for i in range(n):
+        a = names[i]
+        la = lens[a]
+        if la == 0:
+            continue
+        ca = counters[a]
+        for j in range(i + 1, n):
+            b = names[j]
+            lb = lens[b]
+            if lb == 0:
+                continue
+            if max(la, lb) > 2.4 * min(la, lb):
+                continue
+            cb = counters[b]
+            shared = 0
+            if len(ca) <= len(cb):
+                for k, v in ca.items():
+                    w = cb.get(k)
+                    if w:
+                        shared += v if v <= w else w
+            else:
+                for k, v in cb.items():
+                    w = ca.get(k)
+                    if w:
+                        shared += v if v <= w else w
+            if 2 * shared / (la + lb) < 0.6:
+                continue
+            ratio = difflib.SequenceMatcher(None, normed[a], normed[b]).ratio()
+            if MERGE_CONFIRM_SIM_MIN <= ratio < SIMILARITY_THRESHOLD:
+                candidates.add(a)
+                candidates.add(b)
+    return sorted(candidates)
+
+
+def _confirm_batches(merged, candidates, counts, batch_size=25) -> list[list[dict]]:
+    batches = []
+    for i in range(0, len(candidates), batch_size):
+        chunk = candidates[i:i + batch_size]
+        records = []
+        for name in chunk:
+            rec = merged.characters[name]
+            records.append({
+                "canonical": rec.canonical,
+                "aliases": sorted(rec.aliases),
+                "identity": rec.identity_line(),
+                "arcs": counts.get(rec.canonical, 0),
+            })
+        batches.append(records)
+    return batches
+
+
+class MergeGroup(BaseModel):
+    names: list[str]
+    final_name: str
+
+
+class MergeGroups(BaseModel):
+    groups: list[MergeGroup]
+
+
+def _llm_confirm(batches) -> list[MergeGroup]:
+    from . import llm
+    groups: list[MergeGroup] = []
+    for batch in batches:
+        lines = '\n'.join(
+            f"- {r['identity']}（出现于 {r['arcs']} 个分卷）"
+            for r in batch
+        )
+        prompt = (
+            '以下是从小说不同分卷抽取出的角色记录。请判断哪些记录实际上指向同一个人物，并给出合并分组。\n'
+            '规则：\n'
+            '- 只合并确实指向同一人的记录（别称/简称/译名差异）；\n'
+            '- 无法确定归属的记录不要放进任何分组；\n'
+            '- 每组给出 final_name：该人物最正式的称呼；\n'
+            '- 每组至少包含 2 个名字才需要合并。\n\n'
+            f'{lines}'
+        )
+        try:
+            result = llm.structured_output(MergeGroups, prompt,
+                                           system_prompt='你是小说人物归一化专家。',
+                                           what='ArcMergeConfirm', tier='strong')
+            groups.extend(result.groups)
+        except Exception:  # noqa: BLE001
+            logger.warning('ArcMergeConfirm batch failed; skipping', exc_info=True)
+    return groups
+
+
+def _apply_merge(merged, src, tgt):
+    if src == tgt:
+        return
+    srec = merged.characters.get(src)
+    trec = merged.characters.get(tgt)
+    if srec is None or trec is None:
+        return
+    trec.aliases.update(srec.aliases)
+    trec.aliases.add(src)
+    trec.mention_count += srec.mention_count
+    if srec.role and not trec.role:
+        trec.role = srec.role
+    if len(srec.description) > len(trec.description):
+        trec.description = srec.description
+    for k, v in list(merged._alias_index.items()):
+        if v == src:
+            merged._alias_index[k] = tgt
+    for alias in srec.all_names():
+        merged._alias_index.setdefault(_norm(alias), tgt)
+    from ..models import DIRECTED_CATEGORIES, RelationCategory
+    new_rels: dict[tuple[str, str, str], RelationRecord] = {}
+    for (s, t, cat), rec in merged.relationships.items():
+        ns = tgt if s == src else s
+        nt = tgt if t == src else t
+        if ns == nt:
+            continue
+        try:
+            cat_enum = RelationCategory(cat)
+        except ValueError:
+            cat_enum = RelationCategory.OTHER
+        if cat_enum not in DIRECTED_CATEGORIES and ns > nt:
+            ns, nt = nt, ns
+        key = (ns, nt, cat)
+        old = new_rels.get(key)
+        if old is None:
+            new_rels[key] = RelationRecord(source=ns, target=nt, category=cat,
+                                           detail=rec.detail, evidence=rec.evidence,
+                                           confidence=rec.confidence, count=rec.count)
+        else:
+            old.count += rec.count
+            old.confidence = max(old.confidence, rec.confidence)
+            if len(rec.detail) > len(old.detail):
+                old.detail = rec.detail
+            if len(rec.evidence) > len(old.evidence):
+                old.evidence = rec.evidence
+    merged.relationships = new_rels
+    del merged.characters[src]
+
+
+def merge_arcs(arc_registries, *, confirm: bool = True, confirmer=None) -> EntityRegistry:
+    """两级跨弧合并：L1 确定性，L2 强模型确认。confirmer 供测试注入。"""
+    merged = EntityRegistry()
+    if not arc_registries:
+        return merged
+    for arc in arc_registries:
+        for rec in arc.characters.values():
+            merged.add_character(Character(name=rec.canonical, aliases=sorted(rec.aliases),
+                                           role=rec.role, description=rec.description))
+        for rec in arc.places.values():
+            merged.add_place(Place(name=rec.canonical, description=rec.description))
+        for rel in arc.relationships.values():
+            merged.add_relationship(Relationship(source=rel.source, target=rel.target,
+                                                 category=rel.category, detail=rel.detail,
+                                                 evidence=rel.evidence, confidence=rel.confidence))
+        merged.events.extend(dict(ev) for ev in arc.events)
+    # Materialize characters referenced only by relationships so the merged
+    # registry is the complete world (graph nodes) for downstream phases.
+    for (src, tgt, _cat) in list(merged.relationships):
+        for name in (src, tgt):
+            if name not in merged.characters:
+                merged.characters[name] = CharacterRecord(canonical=name, mention_count=1)
+                merged._alias_index[_norm(name)] = name
+    if confirm and (confirmer is not None or not config.USE_FAKE_LLM):
+        try:
+            seen = _arc_seen(merged, arc_registries)
+            candidates = _find_merge_candidates(merged, arc_registries)
+            if candidates:
+                counts = {name: len(seen.get(name, ())) for name in candidates}
+                batches = _confirm_batches(merged, candidates, counts)
+                groups = (confirmer if confirmer else _llm_confirm)(batches)
+                for group in groups:
+                    g = group.model_dump() if isinstance(group, BaseModel) else group
+                    names = [n for n in g['names'] if n in merged.characters]
+                    if len(names) < 2:
+                        continue
+                    target = g['final_name'] if g['final_name'] in names else names[0]
+                    for name in names:
+                        if name != target:
+                            _apply_merge(merged, name, target)
+        except Exception:  # noqa: BLE001
+            logger.warning('merge_arcs L2 confirm failed; keeping deterministic merge', exc_info=True)
+    return merged

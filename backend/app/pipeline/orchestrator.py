@@ -10,6 +10,7 @@ Produces on disk: raw.<ext>, graph.json, graph.html, summary.json, status.json.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import traceback
 from pathlib import Path
@@ -21,9 +22,9 @@ from ..models import (
     WorkStatus,
 )
 from .chunk import chunk_novel
-from .extract import extract_all
+from .extract import extract_arcs
 from .graph import run_graphify
-from .merge import EntityRegistry
+from .merge import EntityRegistry, merge_arcs
 from .parse import ParseError, parse_upload
 from .summarize import label_communities, summarize
 
@@ -93,11 +94,15 @@ async def run_pipeline(
         status.phase = "extracting"
         status.message = "正在抽取人物与关系…"
         write_status(status)
-        registry = EntityRegistry()
 
         def on_progress(done: int, total: int) -> None:
             status.progress = round(done / total, 4) if total else 1.0
             status.message = f"抽取中 {done}/{total} 块"
+            write_status(status)
+
+        def on_arc_progress(arc_index: int, arc_count: int, done: int, total: int) -> None:
+            status.progress = round(done / total, 4) if total else 1.0
+            status.message = f"抽取中 arc {arc_index + 1}/{arc_count} (block {done}/{total})"
             write_status(status)
 
         def on_warn(msg: str) -> None:
@@ -105,13 +110,15 @@ async def run_pipeline(
             status.warnings = warnings
             write_status(status)
 
-        await extract_all(
+        arc_registries = await extract_arcs(
             blocks,
-            registry,
             granularity=granularity,
+            work_dir=config.work_dir(work_id),
             progress_cb=on_progress,
+            arc_progress_cb=on_arc_progress,
             warn_cb=on_warn,
         )
+        registry = await asyncio.to_thread(merge_arcs, arc_registries)
 
         if not registry.characters:
             raise ParseError("未能抽取到任何人物，无法构建图谱")

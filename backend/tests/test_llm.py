@@ -85,6 +85,21 @@ def test_openai_structured_output_raises_after_attempts(monkeypatch):
         llm.structured_output(_Dummy, "问", system_prompt="提示", what="t", attempts=2)
 
 
+def test_openai_structured_output_injects_json_schema(monkeypatch):
+    monkeypatch.setattr(config, "LLM_PROVIDER", "openai_compatible")
+    seen = []
+
+    def _completion(messages, *, model, max_tokens):
+        seen.append(list(messages))
+        return '{"name": "张三", "age": 30}'
+
+    monkeypatch.setattr(llm, "_openai_completion", _completion)
+    out = llm.structured_output(_Dummy, "问", system_prompt="提示", what="t")
+    assert out.name == "张三"
+    initial = seen[0][-1]["content"]
+    assert '"properties"' in initial and '"age"' in initial
+
+
 def test_openai_validation_error_appends_repair(monkeypatch):
     monkeypatch.setattr(config, "LLM_PROVIDER", "openai_compatible")
     monkeypatch.setattr(config, "EXTRACT_BACKOFF_BASE", 0.001)
@@ -115,3 +130,40 @@ def test_openai_transport_error_does_not_append_repair(monkeypatch):
         llm.structured_output(_Dummy, "问", system_prompt="提示", what="t", attempts=2)
     assert len(seen) == 2
     assert seen[0] == seen[1]
+
+
+def test_structured_output_strong_tier_selects_strong_model(monkeypatch):
+    monkeypatch.setattr(config, 'STRONG_LLM_PROVIDER', 'openai_compatible')
+    monkeypatch.setattr(config, 'LLM_PROVIDER', 'bedrock')
+    monkeypatch.setattr(config, 'STRONG_MODEL_ID', 'strong-model-9')
+    seen = {}
+    def _completion(messages, *, model, max_tokens):
+        seen['model'] = model
+        return '{"name": "张三", "age": 30}'
+    monkeypatch.setattr(llm, '_openai_completion', _completion)
+    out = llm.structured_output(_Dummy, '问', system_prompt='s', what='t', tier='strong')
+    assert out.name == '张三'
+    assert seen['model'] == 'strong-model-9'
+
+
+def test_structured_output_strong_tier_falls_back_to_default_model(monkeypatch):
+    monkeypatch.setattr(config, 'STRONG_LLM_PROVIDER', 'openai_compatible')
+    monkeypatch.setattr(config, 'LLM_PROVIDER', 'bedrock')
+    monkeypatch.setattr(config, 'STRONG_MODEL_ID', '')
+    seen = {}
+    def _completion(messages, *, model, max_tokens):
+        seen['model'] = model
+        return '{"name": "李四", "age": 40}'
+    monkeypatch.setattr(llm, '_openai_completion', _completion)
+    llm.structured_output(_Dummy, '问', system_prompt='s', what='t', tier='strong')
+    assert seen['model'] == config.OPENAI_COMPATIBLE_MODEL_ID
+
+
+def test_structured_output_fast_tier_uses_fast_provider(monkeypatch):
+    monkeypatch.setattr(config, 'STRONG_LLM_PROVIDER', 'openai_compatible')
+    monkeypatch.setattr(config, 'LLM_PROVIDER', 'bedrock')
+    monkeypatch.setattr(config, 'STRONG_MODEL_ID', 'strong-model-9')
+    assert llm._resolve_provider('fast') == 'bedrock'
+    assert llm._resolve_model_id('fast') == config.BEDROCK_MODEL_ID
+    assert llm._resolve_provider('strong') == 'openai_compatible'
+    assert llm._resolve_model_id('strong') == 'strong-model-9'

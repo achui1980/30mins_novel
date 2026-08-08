@@ -71,6 +71,15 @@ class Event(BaseModel):
         default=None, description="事件在全书中的粗略先后顺序，用于未来时间线"
     )
 
+    @field_validator("chapter", mode="before")
+    @classmethod
+    def _coerce_chapter_to_str(cls, v):
+        # The LLM occasionally emits the chapter id/number as an int (e.g. 2)
+        # while the schema declares a string. Coerce rather than skip the block.
+        if isinstance(v, (int, float)):
+            return str(int(v))
+        return v
+
 
 class Relationship(BaseModel):
     source: str = Field(description="关系源角色姓名")

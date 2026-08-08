@@ -7,6 +7,7 @@ from app.models import (
     Character,
     ChunkExtraction,
     DIRECTED_CATEGORIES,
+    Event,
     Relationship,
     RelationCategory,
     confidence_label,
@@ -51,3 +52,13 @@ def test_chunk_extraction_empty_defaults():
     assert ext.places == []
     assert ext.events == []
     assert ext.relationships == []
+
+
+def test_event_chapter_coerces_int_to_str():
+    e = Event(summary="甲登场", chapter=2)
+    assert e.chapter == "2"
+
+
+def test_event_chapter_keeps_str():
+    e = Event(summary="甲登场", chapter="ch0001")
+    assert e.chapter == "ch0001"

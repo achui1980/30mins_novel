@@ -13,13 +13,14 @@ used instead so the full pipeline runs offline and in tests.
 from __future__ import annotations
 
 import asyncio
-import re
+import json
 from typing import Awaitable, Callable, Optional
 
 from .. import config
 from ..models import ChunkExtraction
 from .chunk import Block
 from .merge import EntityRegistry
+from .partition import count_cjk_ngrams, partition_blocks, scan_global_anchors
 
 # A callback the orchestrator supplies to receive per-block progress.
 ProgressCb = Callable[[int, int], None]
@@ -64,19 +65,17 @@ def _extract_block_sync(prompt: str) -> ChunkExtraction:  # pragma: no cover - r
     """Blocking structured extraction, provider-agnostic."""
     from . import llm
 
-    # attempts=1：外层 run_block 循环（EXTRACT_MAX_RETRIES）已有退避重试，
-    # 内层再重试会叠加（4 x 3 = 每个块最多 12 次调用）。
+    # 重试已收敛到 llm 层（spec §6）：由 llm.structured_output 内部负责
+    # attempts 次退避重试，外层 run_block 不再叠加重试循环。
     return llm.structured_output(
         ChunkExtraction, prompt, system_prompt=SYSTEM_PROMPT, what="ChunkExtraction",
-        attempts=1,
+        attempts=config.EXTRACT_MAX_RETRIES,
     )
 
 
 # ---------------------------------------------------------------------------
 # Fake deterministic backend (offline / tests)
 # ---------------------------------------------------------------------------
-
-_FAKE_NAME_RE = re.compile(r"[\u4e00-\u9fff]{2,4}")
 
 
 def fake_extract_block(block: Block) -> ChunkExtraction:
@@ -94,17 +93,7 @@ def fake_extract_block(block: Block) -> ChunkExtraction:
     """
     from ..models import Character, Event, Place, Relationship, RelationCategory
 
-    # Count every 2-, 3- and 4-char CJK substring (sliding window) so repeated
-    # names surface regardless of surrounding punctuation/particles. We then
-    # greedily keep the highest-frequency, longest candidates while suppressing
-    # substrings already covered by a chosen longer name.
-    counts: dict[str, int] = {}
-    for run in re.findall(r"[\u4e00-\u9fff]+", block.text):
-        for length in (2, 3, 4):
-            for i in range(len(run) - length + 1):
-                sub = run[i : i + length]
-                counts[sub] = counts.get(sub, 0) + 1
-
+    counts = count_cjk_ngrams(block.text)
     # Rank by (frequency, length) so longer, more-frequent names win.
     ranked = sorted(counts.items(), key=lambda kv: (kv[1], len(kv[0])), reverse=True)
     top: list[str] = []
@@ -154,6 +143,20 @@ def fake_extract_block(block: Block) -> ChunkExtraction:
 # ---------------------------------------------------------------------------
 
 
+async def run_block(block, known, granularity, sem, use_fake, warn_cb=None):
+    """抽取单个 block，失败返回 None 并告警；重试已收敛到 llm 层。"""
+    async with sem:
+        try:
+            if use_fake:
+                return fake_extract_block(block)
+            prompt = _build_prompt(block, known, granularity)
+            return await asyncio.to_thread(_extract_block_sync, prompt)
+        except Exception as exc:  # noqa: BLE001
+            if warn_cb:
+                warn_cb(f"块 {block.block_id} 抽取失败，已跳过: {exc}")
+            return None
+
+
 async def extract_all(
     blocks: list[Block],
     registry: EntityRegistry,
@@ -178,31 +181,107 @@ async def extract_all(
     sem = asyncio.Semaphore(config.EXTRACT_CONCURRENCY)
     processed = 0
 
-    async def run_block(block: Block, known: str) -> ChunkExtraction | None:
-        async with sem:
-            for attempt in range(config.EXTRACT_MAX_RETRIES):
-                try:
-                    if use_fake:
-                        return fake_extract_block(block)
-                    prompt = _build_prompt(block, known, granularity)
-                    return await asyncio.to_thread(_extract_block_sync, prompt)
-                except Exception as exc:  # noqa: BLE001
-                    if attempt == config.EXTRACT_MAX_RETRIES - 1:
-                        if warn_cb:
-                            warn_cb(f"块 {block.block_id} 抽取失败，已跳过: {exc}")
-                        return None
-                    await asyncio.sleep(config.EXTRACT_BACKOFF_BASE ** attempt)
-        return None
-
     # Process in ordered windows so sliding context stays fresh.
     window = max(1, config.EXTRACT_CONCURRENCY)
     for start in range(0, total, window):
         batch = blocks[start : start + window]
         known = registry.known_entities_prompt()
-        results = await asyncio.gather(*(run_block(b, known) for b in batch))
+        results = await asyncio.gather(
+            *(run_block(b, known, granularity, sem, use_fake, warn_cb) for b in batch)
+        )
         for block, extraction in zip(batch, results):
             if extraction is not None:
                 registry.add_extraction(extraction, block.chapter_id)
             processed += 1
             if progress_cb:
                 progress_cb(processed, total)
+
+
+def _save_arc(registry, arcs_dir, arc_index):
+    arcs_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        'characters': [
+            {'canonical': r.canonical, 'aliases': sorted(r.aliases), 'role': r.role,
+             'description': r.description, 'mention_count': r.mention_count}
+            for r in registry.characters.values()
+        ],
+        'places': [
+            {'canonical': p.canonical, 'description': p.description, 'mention_count': p.mention_count}
+            for p in registry.places.values()
+        ],
+        'relationships': [
+            {'source': r.source, 'target': r.target, 'category': r.category, 'detail': r.detail,
+             'evidence': r.evidence, 'confidence': r.confidence, 'count': r.count}
+            for r in registry.relationships.values()
+        ],
+        'events': registry.events,
+    }
+    (arcs_dir / f'arc_{arc_index:02d}.json').write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def _anchors_prompt(anchors):
+    lines = '\n'.join(f'- {name}' for name in anchors)
+    return '全局主角（全书反复出现的核心人物，请把代词/别称解析到这些名字，不要重复创建）：\n' + lines
+
+
+async def extract_arcs(blocks, *, granularity='quick', work_dir=None,
+                       progress_cb=None, arc_progress_cb=None, warn_cb=None) -> list[EntityRegistry]:
+    """把 blocks 分成弧并行抽取，返回每条弧的独立 EntityRegistry。"""
+    arcs = partition_blocks(blocks)
+    if not arcs:
+        return []
+    use_fake = config.USE_FAKE_LLM
+    global_sem = asyncio.Semaphore(config.GLOBAL_EXTRACT_CONCURRENCY)
+    anchors = scan_global_anchors(blocks)
+    anchors_prompt = _anchors_prompt(anchors) if anchors else None
+    total = len(blocks)
+    arc_count = len(arcs)
+    processed = 0
+    lock = asyncio.Lock()
+
+    async def run_arc(arc_blocks, arc_index):
+        nonlocal processed
+        arc_done = 0
+        registry = EntityRegistry()
+        try:
+            window = max(1, config.EXTRACT_CONCURRENCY)
+            for start in range(0, len(arc_blocks), window):
+                batch = arc_blocks[start:start + window]
+                known = registry.known_entities_prompt()
+                if start == 0 and anchors_prompt:
+                    known = (known + '\n' + anchors_prompt) if known else anchors_prompt
+                results = await asyncio.gather(
+                    *(run_block(b, known, granularity, global_sem, use_fake, warn_cb) for b in batch)
+                )
+                for block, extraction in zip(batch, results):
+                    if extraction is not None:
+                        registry.add_extraction(extraction, block.chapter_id)
+                    async with lock:
+                        processed += 1
+                        arc_done += 1
+                        if progress_cb:
+                            progress_cb(processed, total)
+            if work_dir:
+                _save_arc(registry, work_dir, arc_index)
+            if arc_progress_cb:
+                arc_progress_cb(arc_index, arc_count, processed, total)
+            return registry
+        except Exception as exc:  # noqa: BLE001
+            if warn_cb:
+                warn_cb(f'arc {arc_index + 1} 抽取失败，已跳过: {exc}')
+            async with lock:
+                processed += len(arc_blocks) - arc_done
+                if progress_cb:
+                    progress_cb(processed, total)
+            if work_dir:
+                try:
+                    _save_arc(registry, work_dir, arc_index)
+                except Exception as save_exc:  # noqa: BLE001
+                    if warn_cb:
+                        warn_cb(f'arc {arc_index + 1} 持久化失败: {save_exc}')
+            if arc_progress_cb:
+                arc_progress_cb(arc_index, arc_count, processed, total)
+            return registry
+
+    return await asyncio.gather(*(run_arc(arcs[i], i) for i in range(arc_count)))

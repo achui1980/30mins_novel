@@ -13,3 +13,7 @@ def test_arc_defaults():
 
 def test_strong_provider_inherits_llm_provider():
     assert config.STRONG_LLM_PROVIDER in {"bedrock", "openai_compatible"}
+
+
+def test_mobi_extension_allowed():
+    assert ".mobi" in config.ALLOWED_EXTENSIONS

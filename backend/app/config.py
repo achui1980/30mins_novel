@@ -51,7 +51,7 @@ _REPO_ROOT = _BACKEND_DIR.parent
 DATA_ROOT = Path(_env("NOVEL_KG_DATA_ROOT", str(_REPO_ROOT / "data" / "works")))
 
 # --- Upload limits ---------------------------------------------------------
-ALLOWED_EXTENSIONS = {".txt", ".epub"}
+ALLOWED_EXTENSIONS = {".txt", ".epub", ".mobi"}
 MAX_UPLOAD_BYTES = int(_env("NOVEL_KG_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))  # 25 MB
 
 # --- Chunking --------------------------------------------------------------

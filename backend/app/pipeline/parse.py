@@ -9,6 +9,7 @@ each spine document to a chapter.
 from __future__ import annotations
 
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -141,6 +142,29 @@ def parse_epub(path: Path, fallback_title: str) -> ParsedNovel:
     if not chapters:
         raise ParseError("EPUB 中未找到任何正文文档。")
     return ParsedNovel(title=title, chapters=chapters)
+
+
+def parse_mobi(path: Path, fallback_title: str) -> ParsedNovel:
+    """Parse a MOBI file by unpacking it via the ``mobi`` library then
+    delegating to parse_epub()/parse_txt() for the produced content."""
+    try:
+        import mobi  # type: ignore
+    except ImportError as exc:  # pragma: no cover - dependency guard
+        raise ParseError(f"缺少 MOBI 解析依赖: {exc}") from exc
+
+    tempdir, filepath = mobi.extract(str(path))
+    try:
+        inner_ext = Path(filepath).suffix.lower()
+        if inner_ext in (".html", ".htm"):
+            from bs4 import BeautifulSoup  # type: ignore
+
+            html = Path(filepath).read_bytes()
+            soup = BeautifulSoup(html, "html.parser")
+            text = soup.get_text("\n")
+            return parse_txt(text, fallback_title)
+        raise ParseError(f"不支持的 MOBI 内部格式: {inner_ext}")
+    finally:
+        shutil.rmtree(tempdir, ignore_errors=True)
 
 
 def parse_upload(path: Path, original_filename: str) -> ParsedNovel:

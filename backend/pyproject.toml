@@ -10,6 +10,7 @@ dependencies = [
     "pydantic>=2.6",
     "ebooklib>=0.18",
     "beautifulsoup4>=4.12",
+    "mobi>=0.4",
     "graphifyy>=0.1",
     "strands-agents>=0.1",
     "openai>=1.40",

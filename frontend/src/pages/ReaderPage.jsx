@@ -6,6 +6,7 @@ import OverviewTab from "../components/tabs/OverviewTab";
 import CharactersTab from "../components/tabs/CharactersTab";
 import StoryTab from "../components/tabs/StoryTab";
 import ArcsTab from "../components/tabs/ArcsTab";
+import RawTextTab from "../components/tabs/RawTextTab";
 import TimelineTab from "../components/tabs/TimelineTab";
 import GraphTab from "../components/tabs/GraphTab";
 import AskTab from "../components/tabs/AskTab";
@@ -15,6 +16,7 @@ const TABS = [
   { key: "overview", label: "总览" },
   { key: "characters", label: "人物" },
   { key: "story", label: "故事正片" },
+  { key: "raw", label: "原文" },
   { key: "arcs", label: "情节线" },
   { key: "timeline", label: "时间轴" },
   { key: "graph", label: "图谱" },
@@ -28,6 +30,7 @@ export default function ReaderPage() {
   const [error, setError] = useState("");
   const [tab, setTab] = useState("overview");
   const [askSeed, setAskSeed] = useState(null);
+  const [rawJump, setRawJump] = useState(null);
   const [right, setRight] = useState(null);
 
   useEffect(() => {
@@ -47,6 +50,11 @@ export default function ReaderPage() {
   function askAbout(question) {
     setAskSeed({ question, nonce: Date.now() });
     setTab("ask");
+  }
+
+  function viewChapter(chapterId) {
+    setRawJump({ chapterId, nonce: Date.now() });
+    setTab("raw");
   }
 
   if (error) {
@@ -117,8 +125,13 @@ export default function ReaderPage() {
             <CharactersTab id={id} pkg={pkg} setRight={setRight} />
           )}
           {tab === "story" && <StoryTab id={id} setRight={setRight} />}
+          {tab === "raw" && (
+            <RawTextTab id={id} ls={ls} jump={rawJump} setRight={setRight} />
+          )}
           {tab === "arcs" && <ArcsTab id={id} ls={ls} setRight={setRight} />}
-          {tab === "timeline" && <TimelineTab id={id} setRight={setRight} />}
+          {tab === "timeline" && (
+            <TimelineTab id={id} setRight={setRight} onViewChapter={viewChapter} />
+          )}
           {tab === "graph" && <GraphTab id={id} setRight={setRight} />}
           {tab === "ask" && (
             <AskTab

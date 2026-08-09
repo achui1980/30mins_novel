@@ -71,7 +71,10 @@ export default function TimelineTab({ id, setRight }) {
       <div className="relative border-l-2 border-ink-300 pl-6">
         {groups.map((g, gi) => (
           <div key={gi} className="relative mb-6">
-            <span className="absolute -left-[29px] top-0.5 h-4 w-4 rounded-full border-[3px] border-paper-50 bg-pine-600" />
+            <span
+              aria-hidden="true"
+              className="absolute -left-[29px] top-0.5 h-4 w-4 rounded-full border-[3px] border-paper-50 bg-pine-600"
+            />
             <div className="mb-2 text-xs font-semibold text-ink-600">{g.chapter_title}</div>
             <div className="space-y-2">
               {g.events.map((e) => {
@@ -79,6 +82,7 @@ export default function TimelineTab({ id, setRight }) {
                 return (
                   <div key={e.seq} className="relative">
                     <span
+                      aria-hidden="true"
                       className={`absolute -left-[27px] top-3.5 h-2.5 w-2.5 rounded-full border-2 border-paper-50 ${
                         isSelected ? "bg-seal-600" : "bg-ink-300"
                       }`}

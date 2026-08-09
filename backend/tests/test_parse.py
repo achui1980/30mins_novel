@@ -66,3 +66,21 @@ def test_parse_mobi_epub_source(tmp_path, monkeypatch):
     # the real chapter by title instead of exact chapter count.
     real_chapter = next(c for c in novel.chapters if c.title == "第一章")
     assert "正文内容一" in real_chapter.text
+
+
+def test_parse_mobi_unsupported_inner_format(tmp_path, monkeypatch):
+    extracted_dir = tmp_path / "extracted"
+    extracted_dir.mkdir()
+    pdf_file = extracted_dir / "book.pdf"
+    pdf_file.write_bytes(b"%PDF-1.4 fake print-replica content")
+
+    def fake_extract(path):
+        return str(extracted_dir), str(pdf_file)
+
+    monkeypatch.setattr(mobi, "extract", fake_extract)
+
+    with pytest.raises(ParseError):
+        parse_mobi(tmp_path / "book.mobi", "测试书名")
+
+    # The temp dir mobi.extract() produced must be cleaned up even on error.
+    assert not extracted_dir.exists()

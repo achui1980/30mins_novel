@@ -164,7 +164,7 @@ def parse_mobi(path: Path, fallback_title: str) -> ParsedNovel:
             soup = BeautifulSoup(html, "html.parser")
             text = soup.get_text("\n")
             return parse_txt(text, fallback_title)
-        raise ParseError(f"不支持的 MOBI 内部格式: {inner_ext}")
+        raise ParseError(f"不支持的 MOBI 内部格式（可能是 Print Replica/PDF 电子书）: {inner_ext}")
     finally:
         shutil.rmtree(tempdir, ignore_errors=True)
 

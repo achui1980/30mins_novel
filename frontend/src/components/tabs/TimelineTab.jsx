@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getTimeline } from "../../api";
 
-export default function TimelineTab({ id, setRight }) {
+export default function TimelineTab({ id, setRight, onViewChapter }) {
   const [events, setEvents] = useState(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState(null);
@@ -75,7 +75,16 @@ export default function TimelineTab({ id, setRight }) {
               aria-hidden="true"
               className="absolute -left-[29px] top-0.5 h-4 w-4 rounded-full border-[3px] border-paper-50 bg-pine-600"
             />
-            <div className="mb-2 text-xs font-semibold text-ink-600">{g.chapter_title}</div>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-ink-600">{g.chapter_title}</span>
+              <button
+                type="button"
+                onClick={() => onViewChapter?.(g.chapter_id)}
+                className="text-xs text-ink-600 hover:text-seal-600 hover:underline"
+              >
+                查看原文 →
+              </button>
+            </div>
             <div className="space-y-2">
               {g.events.map((e) => {
                 const isSelected = selected?.seq === e.seq;

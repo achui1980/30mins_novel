@@ -130,3 +130,8 @@ def test_get_chapter_text_404_when_chapter_id_unknown(client):
     resp = client.get(f"/works/{work_id}/chapters/ch9999/text")
 
     assert resp.status_code == 404
+
+
+def test_get_chapter_text_404_when_work_unknown(client):
+    resp = client.get("/works/nonexistent_work_id/chapters/ch0001/text")
+    assert resp.status_code == 404

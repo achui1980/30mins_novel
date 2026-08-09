@@ -82,3 +82,7 @@ export async function askQuestion(id, question) {
 export async function getTimeline(id) {
   return json(await fetch(`${BASE}/works/${id}/timeline`));
 }
+
+export async function getChapterText(id, chapterId) {
+  return json(await fetch(`${BASE}/works/${id}/chapters/${chapterId}/text`));
+}

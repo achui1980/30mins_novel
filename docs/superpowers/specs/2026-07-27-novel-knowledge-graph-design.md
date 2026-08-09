@@ -1,6 +1,6 @@
 # 小说知识图谱应用（30mins Demo）— 设计文档
 
-> 目标：上传一本小说（.txt / .epub），自动生成知识图谱，产出面向读者的「30 分钟读懂一本书」体验：分层摘要、人物关系网、设定卡片。
+> 目标：上传一本小说（.txt / .epub / .mobi），自动生成知识图谱，产出面向读者的「30 分钟读懂一本书」体验：分层摘要、人物关系网、设定卡片。
 > 复用 graphify 的图构建/聚类/分析内核，只新增小说专属的语义提取层与读者摘要层。
 
 日期：2026-07-27
@@ -26,8 +26,8 @@ UI 必须简单。核心体验是「30 分钟读懂一本书」。
 上传后台异步跑一次管道，产出静态工作包，读者快速浏览。选用此方案（Approach A）而非实时按需（B）或纯 agent 无预处理（C），因为它给读者最快的浏览体验，提取只跑一次，契合 graphify「构建一次、多次查询」的模型。
 
 ```
-上传 .txt/.epub
-  → 解析(epub→文本, 按章节切分)
+上传 .txt/.epub/.mobi
+  → 解析(epub/mobi→文本, 按章节切分)
   → 分块(每章 ~2-4k token, 保留章节归属)
   → 逐块提取(Strands structured_output, 滑动上下文注入已知实体)
   → 增量合并去重(精确名 → 别名表 → 相似名归一化确认)
@@ -107,7 +107,7 @@ UI 必须简单。核心体验是「30 分钟读懂一本书」。
 
 ## 6. API（FastAPI，v1 无鉴权，文件系统存储）
 
-- `POST /works`（multipart: file .txt|.epub, granularity=quick|complete 默认 quick）→ 201 `{work_id, status:queued}`。存原文，spawn 后台异步任务，立即返回。
+- `POST /works`（multipart: file .txt|.epub|.mobi, granularity=quick|complete 默认 quick）→ 201 `{work_id, status:queued}`。存原文，spawn 后台异步任务，立即返回。
 - `GET /works/{id}/status` → `{work_id, phase, progress, message}`；phase: queued → parsing → extracting(% = processed_blocks/total) → building → summarizing → done|failed。前端 ~2s 轮询。
 - `GET /works/{id}` → WorkPackage。
 - `GET /works/{id}/graph` → graph.json（供 vis-network/cytoscape）。
@@ -123,7 +123,7 @@ UI 必须简单。核心体验是「30 分钟读懂一本书」。
 
 ## 7. 前端（React + Vite + vis-network）
 
-- **首页 `/`**：拖拽上传区（.txt/.epub + 档位选择 quick/complete）+ 已处理作品列表。
+- **首页 `/`**：拖拽上传区（.txt/.epub/.mobi + 档位选择 quick/complete）+ 已处理作品列表。
 - **处理页 `/works/{id}/processing`**：进度条 + 阶段文字；轮询 status；done 时自动跳转阅读页。
 - **阅读页 `/works/{id}`（核心，Tab 布局）**：
   - **[概览]** 一句话 → 概述 → 主角卡片（god_nodes）= 「30 分钟读懂」入口
@@ -137,7 +137,7 @@ UI 必须简单。核心体验是「30 分钟读懂一本书」。
 ## 8. 错误处理与测试
 
 ### 错误处理
-- 上传校验扩展名/大小；epub 解析失败 → 明确报错。
+- 上传校验扩展名/大小；epub/mobi 解析失败 → 明确报错。
 - 单块提取重试（指数退避）→ 跳过并记录到 status.json warnings，不中断整个任务。
 - Bedrock 限流 → 信号量并发 + 退避。
 - 任务级失败 → status.phase=failed + error 字段，前端显示重试。

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 
 from pydantic import ValidationError
@@ -24,6 +25,15 @@ from pydantic import ValidationError
 from .. import config
 
 logger = logging.getLogger("novel_kg.llm")
+
+# Model-id prefixes/substrings whose OpenAI-compatible endpoint accepts the
+# `extra_body={"thinking": {"type": "disabled"}}` param. Both DeepSeek and
+# MiniMax support this shape; unrelated endpoints may 400 on unknown
+# extra_body fields, so the toggle is only sent to known-compatible models.
+_THINKING_TOGGLE_MARKERS = ("deepseek", "minimax")
+
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_CODE_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 
 
 def _schema_json(schema) -> str:
@@ -37,13 +47,30 @@ def _schema_json(schema) -> str:
     return json.dumps(schema.model_json_schema(), ensure_ascii=False, indent=2)
 
 
-def _is_deepseek(model_id: str | None = None) -> bool:
-    """True when the model id belongs to DeepSeek.
+def _supports_thinking_toggle(model_id: str | None = None) -> bool:
+    """True when the model id belongs to a family that supports the
+    ``thinking`` extra_body toggle (DeepSeek, MiniMax).
 
     Falls back to the fast model when called without an explicit id, keeping
     the historical default behavior.
     """
-    return (model_id or config.OPENAI_COMPATIBLE_MODEL_ID).startswith("deepseek")
+    resolved = (model_id or config.OPENAI_COMPATIBLE_MODEL_ID).lower()
+    return any(marker in resolved for marker in _THINKING_TOGGLE_MARKERS)
+
+
+def _clean_llm_json_text(text: str) -> str:
+    """Strip ``<think>...</think>`` reasoning blocks and markdown code fences.
+
+    Some OpenAI-compatible models (e.g. MiniMax-M3 with thinking left on)
+    prepend a ``<think>...</think>`` block to the answer and/or wrap the JSON
+    payload in a ` ```json ` fenced code block instead of emitting raw JSON.
+    Neither is valid JSON on its own, so strip both before validation.
+    """
+    cleaned = _THINK_BLOCK_RE.sub("", text).strip()
+    fence_match = _CODE_FENCE_RE.match(cleaned)
+    if fence_match:
+        cleaned = fence_match.group(1).strip()
+    return cleaned
 
 
 # ---------------------------------------------------------------------------
@@ -80,9 +107,9 @@ def make_model(tier: str = "fast"):  # pragma: no cover - requires LLM creds
         from strands.models.openai import OpenAIModel
 
         params: dict = {}
-        # The `thinking` field is DeepSeek-specific; only send it to DeepSeek.
-        # Non-DeepSeek endpoints may 400 on unknown extra_body fields.
-        if not config.OPENAI_COMPATIBLE_THINKING and _is_deepseek(model_id):
+        # The `thinking` field is only supported by DeepSeek/MiniMax; other
+        # endpoints may 400 on unknown extra_body fields.
+        if not config.OPENAI_COMPATIBLE_THINKING and _supports_thinking_toggle(model_id):
             params["extra_body"] = {"thinking": {"type": "disabled"}}
         return OpenAIModel(
             client_args={
@@ -176,7 +203,7 @@ def _openai_structured_output(schema, prompt, *, system_prompt, what, attempts, 
                 model=_resolve_model_id(tier),
                 max_tokens=config.OPENAI_COMPATIBLE_MAX_TOKENS,
             )
-            return schema.model_validate_json(content)
+            return schema.model_validate_json(_clean_llm_json_text(content))
         except ValidationError as exc:
             last_exc = exc
             logger.warning(
@@ -215,8 +242,9 @@ def _openai_completion(messages, *, model: str, max_tokens: int):  # pragma: no 
         timeout=config.OPENAI_COMPATIBLE_TIMEOUT,
     )
     extra: dict = {}
-    # The `thinking` field is DeepSeek-specific; only send it to DeepSeek.
-    if not config.OPENAI_COMPATIBLE_THINKING and _is_deepseek(model):
+    # The `thinking` field is only supported by DeepSeek/MiniMax; other
+    # endpoints may 400 on unknown extra_body fields.
+    if not config.OPENAI_COMPATIBLE_THINKING and _supports_thinking_toggle(model):
         extra["extra_body"] = {"thinking": {"type": "disabled"}}
     resp = client.chat.completions.create(
         model=model,

@@ -34,11 +34,13 @@ def test_timeout_default(monkeypatch):
     assert config.OPENAI_COMPATIBLE_TIMEOUT == 120
 
 
-def test_is_deepseek(monkeypatch):
+def test_supports_thinking_toggle(monkeypatch):
     monkeypatch.setattr(config, "OPENAI_COMPATIBLE_MODEL_ID", "deepseek-v4-flash")
-    assert llm._is_deepseek() is True
+    assert llm._supports_thinking_toggle() is True
+    monkeypatch.setattr(config, "OPENAI_COMPATIBLE_MODEL_ID", "MiniMax-M3")
+    assert llm._supports_thinking_toggle() is True
     monkeypatch.setattr(config, "OPENAI_COMPATIBLE_MODEL_ID", "moonshot-v1-8k")
-    assert llm._is_deepseek() is False
+    assert llm._supports_thinking_toggle() is False
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +132,38 @@ def test_openai_transport_error_does_not_append_repair(monkeypatch):
         llm.structured_output(_Dummy, "问", system_prompt="提示", what="t", attempts=2)
     assert len(seen) == 2
     assert seen[0] == seen[1]
+
+
+def test_clean_llm_json_text_strips_think_block():
+    raw = "<think>先分析一下剧情...</think>\n{\"name\": \"张三\", \"age\": 30}"
+    assert llm._clean_llm_json_text(raw) == '{"name": "张三", "age": 30}'
+
+
+def test_clean_llm_json_text_strips_code_fence():
+    raw = '```json\n{"name": "张三", "age": 30}\n```'
+    assert llm._clean_llm_json_text(raw) == '{"name": "张三", "age": 30}'
+
+
+def test_clean_llm_json_text_strips_think_block_and_code_fence():
+    raw = '<think>先想想</think>\n```json\n{"name": "张三", "age": 30}\n```'
+    assert llm._clean_llm_json_text(raw) == '{"name": "张三", "age": 30}'
+
+
+def test_clean_llm_json_text_passthrough_for_plain_json():
+    raw = '{"name": "张三", "age": 30}'
+    assert llm._clean_llm_json_text(raw) == raw
+
+
+def test_openai_structured_output_strips_think_block_and_fences(monkeypatch):
+    monkeypatch.setattr(config, "LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setattr(
+        llm, "_openai_completion",
+        lambda messages, model, max_tokens: (
+            '<think>MiniMax 的思考内容...</think>\n```json\n{"name": "张三", "age": 30}\n```'
+        ),
+    )
+    out = llm.structured_output(_Dummy, "问", system_prompt="提示", what="t")
+    assert out.name == "张三" and out.age == 30
 
 
 def test_structured_output_strong_tier_selects_strong_model(monkeypatch):

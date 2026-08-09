@@ -1,4 +1,4 @@
-"""Parsing layer: raw upload (.txt / .epub) -> ordered list of chapters.
+"""Parsing layer: raw upload (.txt / .epub / .mobi) -> ordered list of chapters.
 
 A ``Chapter`` is just a title + body text. Chapter detection for plain text uses
 common Chinese and English heading patterns; if none are found the whole text is
@@ -183,6 +183,8 @@ def parse_upload(path: Path, original_filename: str) -> ParsedNovel:
         return parse_txt(text, fallback_title)
     if ext == ".epub":
         return parse_epub(path, fallback_title)
+    if ext == ".mobi":
+        return parse_mobi(path, fallback_title)
     raise ParseError(f"不支持的文件类型: {ext}")
 
 

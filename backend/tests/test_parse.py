@@ -94,3 +94,27 @@ def test_parse_mobi_extract_failure_raises_parse_error(tmp_path, monkeypatch):
 
     with pytest.raises(ParseError):
         parse_mobi(tmp_path / "book.mobi", "测试书名")
+
+
+def test_parse_upload_dispatches_mobi_extension(tmp_path, monkeypatch):
+    from app.pipeline.parse import parse_upload
+
+    extracted_dir = tmp_path / "extracted"
+    extracted_dir.mkdir()
+    html_file = extracted_dir / "book.html"
+    html_file.write_text(
+        "<html><body><h1>第一章</h1><p>正文内容。</p></body></html>",
+        encoding="utf-8",
+    )
+
+    def fake_extract(path):
+        return str(extracted_dir), str(html_file)
+
+    monkeypatch.setattr(mobi, "extract", fake_extract)
+
+    mobi_path = tmp_path / "book.mobi"
+    mobi_path.write_bytes(b"fake mobi container bytes")
+
+    novel = parse_upload(mobi_path, "book.mobi")
+
+    assert novel.chapters[0].title == "第一章"

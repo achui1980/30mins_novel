@@ -76,3 +76,57 @@ def test_get_timeline_404_when_events_missing(client):
 def test_get_timeline_404_when_work_unknown(client):
     res = client.get("/works/nonexistent_work_id/timeline")
     assert res.status_code == 404
+
+
+def test_get_chapter_text_returns_full_chapter(client):
+    from app.models import WorkStatus
+
+    work_id = "work-rawtext-ok"
+    wdir = config.work_dir(work_id)
+    wdir.mkdir(parents=True, exist_ok=True)
+    status = WorkStatus(work_id=work_id, title="测试作品", phase="done", progress=1.0)
+    (wdir / "status.json").write_text(status.model_dump_json(), encoding="utf-8")
+    (wdir / "chapters.json").write_text(
+        json.dumps({"ch0001": {"title": "第一章", "text": "这是第一章的正文内容。"}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    resp = client.get(f"/works/{work_id}/chapters/ch0001/text")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["chapter_id"] == "ch0001"
+    assert body["title"] == "第一章"
+    assert body["text"] == "这是第一章的正文内容。"
+
+
+def test_get_chapter_text_404_when_chapters_missing(client):
+    from app.models import WorkStatus
+
+    work_id = "work-rawtext-no-chapters"
+    wdir = config.work_dir(work_id)
+    wdir.mkdir(parents=True, exist_ok=True)
+    status = WorkStatus(work_id=work_id, title="测试作品", phase="done", progress=1.0)
+    (wdir / "status.json").write_text(status.model_dump_json(), encoding="utf-8")
+
+    resp = client.get(f"/works/{work_id}/chapters/ch0001/text")
+
+    assert resp.status_code == 404
+
+
+def test_get_chapter_text_404_when_chapter_id_unknown(client):
+    from app.models import WorkStatus
+
+    work_id = "work-rawtext-unknown-chapter"
+    wdir = config.work_dir(work_id)
+    wdir.mkdir(parents=True, exist_ok=True)
+    status = WorkStatus(work_id=work_id, title="测试作品", phase="done", progress=1.0)
+    (wdir / "status.json").write_text(status.model_dump_json(), encoding="utf-8")
+    (wdir / "chapters.json").write_text(
+        json.dumps({"ch0001": {"title": "第一章", "text": "正文"}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    resp = client.get(f"/works/{work_id}/chapters/ch9999/text")
+
+    assert resp.status_code == 404

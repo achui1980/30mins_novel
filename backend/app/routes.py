@@ -8,7 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Uploa
 from fastapi.responses import FileResponse, JSONResponse
 
 from . import config, store
-from .models import CreateWorkResponse, WorkStatus
+from .models import ChapterText, CreateWorkResponse, WorkStatus
 from .pipeline.orchestrator import run_pipeline
 
 router = APIRouter()
@@ -121,6 +121,24 @@ async def get_timeline(work_id: str):
 
     timeline = build_timeline(events, chapters)
     return {"work_id": work_id, "events": [e.model_dump() for e in timeline]}
+
+
+@router.get("/works/{work_id}/chapters/{chapter_id}/text", response_model=ChapterText)
+async def get_chapter_text(work_id: str, chapter_id: str):
+    """Return the persisted source text for one chapter (原文 tab)."""
+    if store.get_status(work_id) is None:
+        raise HTTPException(404, "作品不存在")
+    chapters = store.read_chapters(work_id)
+    if not chapters:
+        raise HTTPException(404, "该作品未保存章节原文（请重新处理该作品以体验此功能）")
+    chapter = chapters.get(chapter_id)
+    if chapter is None:
+        raise HTTPException(404, f"章节 {chapter_id} 不存在")
+    return ChapterText(
+        chapter_id=chapter_id,
+        title=chapter.get("title") or chapter_id,
+        text=chapter.get("text") or "",
+    )
 
 
 @router.post("/works/{work_id}/chapters/{chapter_id}/summary")

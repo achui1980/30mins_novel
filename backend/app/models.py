@@ -125,6 +125,14 @@ class ChapterSummary(BaseModel):
     summary: str
 
 
+class ChapterText(BaseModel):
+    """Full persisted source text for one chapter (原文 tab)."""
+
+    chapter_id: str
+    title: str = ""
+    text: str
+
+
 class ArcSummary(BaseModel):
     """A story arc == a graph community/cluster."""
 

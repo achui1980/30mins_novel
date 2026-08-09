@@ -66,27 +66,37 @@ export default function TimelineTab({ id, setRight }) {
   return (
     <div className="px-8 py-10">
       <p className="mb-4 text-sm text-ink-600">
-        按章节顺序排列的关键情节事件，横向滚动查看，点击卡片展开详情。
+        按章节顺序自上而下排列的关键情节事件，点击卡片查看详情。
       </p>
-      <div className="flex gap-6 overflow-x-auto pb-4">
+      <div className="relative border-l-2 border-ink-300 pl-6">
         {groups.map((g, gi) => (
-          <div key={gi} className="flex-shrink-0">
+          <div key={gi} className="relative mb-6">
+            <span className="absolute -left-[29px] top-0.5 h-4 w-4 rounded-full border-[3px] border-paper-50 bg-pine-600" />
             <div className="mb-2 text-xs font-semibold text-ink-600">{g.chapter_title}</div>
-            <div className="flex gap-2">
-              {g.events.map((e) => (
-                <button
-                  key={e.seq}
-                  type="button"
-                  onClick={() => setSelected(selected?.seq === e.seq ? null : e)}
-                  className={`w-48 rounded-card border p-3 text-left text-sm ${
-                    selected?.seq === e.seq
-                      ? "border-seal-600 bg-seal-100/30 text-ink-900"
-                      : "border-ink-300 bg-white text-ink-900"
-                  }`}
-                >
-                  {e.summary}
-                </button>
-              ))}
+            <div className="space-y-2">
+              {g.events.map((e) => {
+                const isSelected = selected?.seq === e.seq;
+                return (
+                  <div key={e.seq} className="relative">
+                    <span
+                      className={`absolute -left-[27px] top-3.5 h-2.5 w-2.5 rounded-full border-2 border-paper-50 ${
+                        isSelected ? "bg-seal-600" : "bg-ink-300"
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSelected(isSelected ? null : e)}
+                      className={`w-full rounded-card border p-3 text-left text-sm ${
+                        isSelected
+                          ? "border-seal-600 bg-seal-100/30 text-ink-900"
+                          : "border-ink-300 bg-white text-ink-900"
+                      }`}
+                    >
+                      {e.summary}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))}

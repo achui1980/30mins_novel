@@ -155,6 +155,8 @@ def parse_mobi(path: Path, fallback_title: str) -> ParsedNovel:
     tempdir, filepath = mobi.extract(str(path))
     try:
         inner_ext = Path(filepath).suffix.lower()
+        if inner_ext == ".epub":
+            return parse_epub(Path(filepath), fallback_title)
         if inner_ext in (".html", ".htm"):
             from bs4 import BeautifulSoup  # type: ignore
 

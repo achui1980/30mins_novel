@@ -31,3 +31,38 @@ def test_parse_mobi_html_source(tmp_path, monkeypatch):
     assert len(novel.chapters) == 1
     assert novel.chapters[0].title == "第一章"
     assert novel.chapters[0].text == "正文内容一。"
+
+
+def test_parse_mobi_epub_source(tmp_path, monkeypatch):
+    from ebooklib import epub as epub_mod
+
+    book = epub_mod.EpubBook()
+    book.set_identifier("id123")
+    book.set_title("测试电子书")
+    book.set_language("zh")
+
+    chapter = epub_mod.EpubHtml(title="第一章", file_name="chap_1.xhtml", lang="zh")
+    chapter.content = "<h1>第一章</h1><p>正文内容一。</p>"
+    book.add_item(chapter)
+    book.toc = (chapter,)
+    book.add_item(epub_mod.EpubNcx())
+    book.add_item(epub_mod.EpubNav())
+    book.spine = ["nav", chapter]
+
+    extracted_dir = tmp_path / "extracted"
+    extracted_dir.mkdir()
+    epub_path = extracted_dir / "book.epub"
+    epub_mod.write_epub(str(epub_path), book)
+
+    def fake_extract(path):
+        return str(extracted_dir), str(epub_path)
+
+    monkeypatch.setattr(mobi, "extract", fake_extract)
+
+    novel = parse_mobi(tmp_path / "book.mobi", "测试电子书")
+
+    # parse_epub() also picks up the EPUB's own nav document as a spurious
+    # extra "chapter" (pre-existing behavior, out of scope here) -- assert on
+    # the real chapter by title instead of exact chapter count.
+    real_chapter = next(c for c in novel.chapters if c.title == "第一章")
+    assert "正文内容一" in real_chapter.text

@@ -30,7 +30,7 @@ export default function CharactersTab({ id, pkg, setRight }) {
     const relations = edges.map((e) => {
       const otherId = e.source === selectedId ? e.target : e.source;
       const other = graph?.nodes?.find((n) => n.id === otherId);
-      return { label: other?.label || otherId, category: e.category };
+      return { label: other?.label || otherId, category: e.category, otherId };
     });
     const chapters = (events || [])
       .filter((ev) => ev.participants?.includes(label))
@@ -58,7 +58,15 @@ export default function CharactersTab({ id, pkg, setRight }) {
                   className="border-l-2 pl-2 text-sm text-ink-900"
                   style={{ borderColor: categoryColor(r.category) }}
                 >
-                  → {r.label}（{r.category}）
+                  →{" "}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(r.otherId)}
+                    className="text-ink-900 hover:text-seal-600 hover:underline"
+                  >
+                    {r.label}
+                  </button>
+                  （{r.category}）
                 </li>
               ))}
             </ul>

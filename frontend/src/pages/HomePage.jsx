@@ -16,8 +16,8 @@ export default function HomePage() {
   function handleFile(file) {
     if (!file) return;
     const name = file.name.toLowerCase();
-    if (!name.endsWith(".txt") && !name.endsWith(".epub")) {
-      setError("只支持 .txt 与 .epub 文件");
+    if (!name.endsWith(".txt") && !name.endsWith(".epub") && !name.endsWith(".mobi")) {
+      setError("只支持 .txt、.epub 与 .mobi 文件");
       return;
     }
     setError("");
@@ -112,13 +112,13 @@ export default function HomePage() {
           ) : (
             <>
               <p className="text-sm text-ink-900">拖拽小说文件到此，或点击选择</p>
-              <p className="mt-1 text-xs text-ink-600">.txt 与 .epub，最大 25MB</p>
+              <p className="mt-1 text-xs text-ink-600">.txt、.epub 与 .mobi，最大 25MB</p>
             </>
           )}
           <input
             ref={fileRef}
             type="file"
-            accept=".txt,.epub"
+            accept=".txt,.epub,.mobi"
             className="hidden"
             onChange={(e) => handleFile(e.target.files?.[0])}
           />

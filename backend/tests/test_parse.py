@@ -84,3 +84,13 @@ def test_parse_mobi_unsupported_inner_format(tmp_path, monkeypatch):
 
     # The temp dir mobi.extract() produced must be cleaned up even on error.
     assert not extracted_dir.exists()
+
+
+def test_parse_mobi_extract_failure_raises_parse_error(tmp_path, monkeypatch):
+    def fake_extract(path):
+        raise RuntimeError("corrupted or DRM-protected mobi file")
+
+    monkeypatch.setattr(mobi, "extract", fake_extract)
+
+    with pytest.raises(ParseError):
+        parse_mobi(tmp_path / "book.mobi", "测试书名")

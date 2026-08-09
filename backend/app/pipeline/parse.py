@@ -152,7 +152,11 @@ def parse_mobi(path: Path, fallback_title: str) -> ParsedNovel:
     except ImportError as exc:  # pragma: no cover - dependency guard
         raise ParseError(f"缺少 MOBI 解析依赖: {exc}") from exc
 
-    tempdir, filepath = mobi.extract(str(path))
+    try:
+        tempdir, filepath = mobi.extract(str(path))
+    except Exception as exc:  # noqa: BLE001 - surface a clean error
+        raise ParseError(f"MOBI 解析失败: {exc}") from exc
+
     try:
         inner_ext = Path(filepath).suffix.lower()
         if inner_ext == ".epub":

@@ -1,32 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { getChapterSummary } from "../../api";
+import { useAccordionCache } from "../../hooks/useAccordionCache";
 
 export default function ArcsTab({ id, ls, setRight }) {
   const arcs = ls.arcs || [];
   const chapters = ls.chapters || [];
-  const [openCh, setOpenCh] = useState(null);
-  const [chState, setChState] = useState({});
+  const { open: openCh, itemState: chState, toggle } = useAccordionCache();
 
-  async function toggleChapter(i, chapter) {
-    if (openCh === i) {
-      setOpenCh(null);
-      return;
-    }
-    setOpenCh(i);
-    const existing = chState[i];
-    if (
-      (chapter.summary && chapter.summary.trim()) ||
-      (existing && (existing.summary || existing.loading))
-    ) {
-      return;
-    }
-    setChState((s) => ({ ...s, [i]: { loading: true } }));
-    try {
-      const res = await getChapterSummary(id, chapter.chapter);
-      setChState((s) => ({ ...s, [i]: { loading: false, summary: res.summary } }));
-    } catch (e) {
-      setChState((s) => ({ ...s, [i]: { loading: false, error: e.message } }));
-    }
+  function toggleChapter(i, chapter) {
+    return toggle(
+      i,
+      async () => {
+        const res = await getChapterSummary(id, chapter.chapter);
+        return res.summary;
+      },
+      (existing) =>
+        !!(chapter.summary && chapter.summary.trim()) ||
+        (!!existing && !!(existing.data || existing.loading))
+    );
   }
 
   useEffect(() => {
@@ -89,7 +80,7 @@ export default function ArcsTab({ id, ls, setRight }) {
             {chapters.map((c, i) => {
               const open = openCh === i;
               const st = chState[i] || {};
-              const body = (c.summary && c.summary.trim()) || st.summary;
+              const body = (c.summary && c.summary.trim()) || st.data;
               return (
                 <div key={i}>
                   <button

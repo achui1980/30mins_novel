@@ -185,6 +185,31 @@ def append_ask_entry(work_id: str, entry: dict) -> None:
     path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def find_completed_work_by_hash(content_sha256: str) -> str | None:
+    """Return the work_id of an existing *done* work with matching upload
+    content hash, or None. Used to dedup identical re-uploads (design: skip
+    re-running the pipeline for content that's already been processed).
+
+    Reuses read_meta/get_status rather than introducing a separate index
+    file; a plain directory scan is simple and always consistent (no risk of
+    a stale index after deletions), which matters more than raw speed for a
+    demo-scale number of works.
+    """
+    root = config.DATA_ROOT
+    if not content_sha256 or not root.exists():
+        return None
+    for wdir in root.iterdir():
+        if not wdir.is_dir():
+            continue
+        meta = read_meta(wdir.name)
+        if not meta or meta.get("content_sha256") != content_sha256:
+            continue
+        status = get_status(wdir.name)
+        if status is not None and status.phase == "done":
+            return wdir.name
+    return None
+
+
 def list_works() -> list[WorkListItem]:
     root = config.DATA_ROOT
     if not root.exists():

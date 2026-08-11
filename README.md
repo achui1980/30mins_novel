@@ -23,37 +23,43 @@
 
 一句话总结 + 故事钩子 + 概述 + 主要人物卡片（含提及次数）。
 
-![概览](docs/screenshots/01-overview.png)
+![概览](docs/screenshots/总览.png)
 
 ### 故事正片
 
 主线梗概 + 情节节拍列表，点击任意节拍按需生成该段叙述。
 
-![故事正片](docs/screenshots/02-story-beats.png)
+![故事正片](docs/screenshots/故事.png)
 
 ### 故事脉络
 
 情节线（arc≈图谱社区）卡片，每张列出涉及人物。
 
-![故事脉络](docs/screenshots/03-story-arcs.png)
+![故事脉络](docs/screenshots/情节.png)
 
 ### 人物关系
 
 vis-network 关系图，按 8 类关系着色（图例见顶部）。
 
-![人物关系](docs/screenshots/04-character-relations.png)
+![人物关系](docs/screenshots/图谱.png)
 
 ### 问答
 
 基于本书知识图谱与情节信息回答（仅依据已分析内容，不凭空编造）。
 
-![问答](docs/screenshots/05-qa.png)
+![问答](docs/screenshots/问答.png)
 
 ### 设定卡
 
 主题 / 设定卡片网格：背景、核心冲突、主角群像、主题隐喻等。
 
-![设定卡](docs/screenshots/06-setting-cards.png)
+![设定卡](docs/screenshots/设定.png)
+
+### 原文
+
+书本原文。
+
+![设定卡](docs/screenshots/原文.png)
 
 ### 完整图谱
 

@@ -11,7 +11,7 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const fileRef = useRef(null);
   const navigate = useNavigate();
-  const { works } = useWorksList();
+  const { works, error: worksError, loading: worksLoading } = useWorksList();
 
   function handleFile(file) {
     if (!file) return;
@@ -43,20 +43,26 @@ export default function HomePage() {
   const stats = (
     <div className="space-y-4">
       <h2 className="font-serif text-sm font-semibold text-ink-900">概览</h2>
-      <dl className="space-y-2 text-xs">
-        <div className="flex justify-between">
-          <dt className="text-ink-600">作品总数</dt>
-          <dd className="font-medium">{total}</dd>
+      {worksError ? (
+        <div className="rounded-card border border-danger-600/40 bg-danger-600/5 px-2 py-1 text-xs text-danger-600">
+          加载作品统计失败
         </div>
-        <div className="flex justify-between">
-          <dt className="text-ink-600">已完成</dt>
-          <dd className="font-medium text-pine-600">{done}</dd>
-        </div>
-        <div className="flex justify-between">
-          <dt className="text-ink-600">失败</dt>
-          <dd className="font-medium text-danger-600">{failed}</dd>
-        </div>
-      </dl>
+      ) : (
+        <dl className="space-y-2 text-xs">
+          <div className="flex justify-between">
+            <dt className="text-ink-600">作品总数</dt>
+            <dd className="font-medium">{worksLoading ? "…" : total}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-ink-600">已完成</dt>
+            <dd className="font-medium text-pine-600">{worksLoading ? "…" : done}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-ink-600">失败</dt>
+            <dd className="font-medium text-danger-600">{worksLoading ? "…" : failed}</dd>
+          </div>
+        </dl>
+      )}
     </div>
   );
 

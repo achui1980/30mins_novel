@@ -122,7 +122,16 @@ def make_model(tier: str = "fast"):  # pragma: no cover - requires LLM creds
         )
     from strands.models import BedrockModel
 
-    return BedrockModel(model_id=model_id, region_name=config.BEDROCK_REGION)
+    from botocore.config import Config as BotocoreConfig
+
+    return BedrockModel(
+        model_id=model_id,
+        region_name=config.BEDROCK_REGION,
+        boto_client_config=BotocoreConfig(
+            read_timeout=config.BEDROCK_TIMEOUT,
+            connect_timeout=config.BEDROCK_TIMEOUT,
+        ),
+    )
 
 
 def make_agent(system_prompt: str, tools=None, tier: str = "fast"):  # pragma: no cover - requires LLM creds

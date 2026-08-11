@@ -1,16 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getWork, graphHtmlUrl } from "../api";
 import AppShell from "../components/AppShell";
-import OverviewTab from "../components/tabs/OverviewTab";
-import CharactersTab from "../components/tabs/CharactersTab";
-import StoryTab from "../components/tabs/StoryTab";
-import ArcsTab from "../components/tabs/ArcsTab";
-import RawTextTab from "../components/tabs/RawTextTab";
-import TimelineTab from "../components/tabs/TimelineTab";
-import GraphTab from "../components/tabs/GraphTab";
-import AskTab from "../components/tabs/AskTab";
-import SettingsTab from "../components/tabs/SettingsTab";
+
+const OverviewTab = lazy(() => import("../components/tabs/OverviewTab"));
+const CharactersTab = lazy(() => import("../components/tabs/CharactersTab"));
+const StoryTab = lazy(() => import("../components/tabs/StoryTab"));
+const ArcsTab = lazy(() => import("../components/tabs/ArcsTab"));
+const RawTextTab = lazy(() => import("../components/tabs/RawTextTab"));
+const TimelineTab = lazy(() => import("../components/tabs/TimelineTab"));
+const GraphTab = lazy(() => import("../components/tabs/GraphTab"));
+const AskTab = lazy(() => import("../components/tabs/AskTab"));
+const SettingsTab = lazy(() => import("../components/tabs/SettingsTab"));
 
 const TABS = [
   { key: "overview", label: "总览" },
@@ -118,33 +119,41 @@ export default function ReaderPage() {
         </div>
 
         <div className="mt-6">
-          {tab === "overview" && (
-            <OverviewTab pkg={pkg} ls={ls} onAsk={askAbout} setRight={setRight} />
-          )}
-          {tab === "characters" && (
-            <CharactersTab id={id} pkg={pkg} setRight={setRight} />
-          )}
-          {tab === "story" && <StoryTab id={id} setRight={setRight} />}
-          {tab === "raw" && (
-            <RawTextTab id={id} ls={ls} jump={rawJump} setRight={setRight} />
-          )}
-          {tab === "arcs" && <ArcsTab id={id} ls={ls} setRight={setRight} />}
-          {tab === "timeline" && (
-            <TimelineTab id={id} setRight={setRight} onViewChapter={viewChapter} />
-          )}
-          {tab === "graph" && <GraphTab id={id} setRight={setRight} />}
-          {tab === "ask" && (
-            <AskTab
-              id={id}
-              seed={askSeed}
-              questions={questions}
-              onAsk={askAbout}
-              setRight={setRight}
-            />
-          )}
-          {tab === "settings" && (
-            <SettingsTab cards={pkg.setting_cards || []} setRight={setRight} />
-          )}
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center py-16">
+                <span className="spinner" />
+              </div>
+            }
+          >
+            {tab === "overview" && (
+              <OverviewTab pkg={pkg} ls={ls} onAsk={askAbout} setRight={setRight} />
+            )}
+            {tab === "characters" && (
+              <CharactersTab id={id} pkg={pkg} setRight={setRight} />
+            )}
+            {tab === "story" && <StoryTab id={id} setRight={setRight} />}
+            {tab === "raw" && (
+              <RawTextTab id={id} ls={ls} jump={rawJump} setRight={setRight} />
+            )}
+            {tab === "arcs" && <ArcsTab id={id} ls={ls} setRight={setRight} />}
+            {tab === "timeline" && (
+              <TimelineTab id={id} setRight={setRight} onViewChapter={viewChapter} />
+            )}
+            {tab === "graph" && <GraphTab id={id} setRight={setRight} />}
+            {tab === "ask" && (
+              <AskTab
+                id={id}
+                seed={askSeed}
+                questions={questions}
+                onAsk={askAbout}
+                setRight={setRight}
+              />
+            )}
+            {tab === "settings" && (
+              <SettingsTab cards={pkg.setting_cards || []} setRight={setRight} />
+            )}
+          </Suspense>
         </div>
       </div>
     </AppShell>

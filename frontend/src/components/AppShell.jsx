@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Plus, BookMarked, Trash2 } from "lucide-react";
 import { useWorksList } from "../hooks/useWorksList";
 import { deleteWork } from "../api";
 
 export default function AppShell({ activeWorkId, right, children }) {
-  const { works, loading, refresh } = useWorksList();
+  const { works, loading, error, refresh } = useWorksList();
+  const [deleteError, setDeleteError] = useState("");
   const navigate = useNavigate();
 
   function openWork(w) {
@@ -14,7 +16,10 @@ export default function AppShell({ activeWorkId, right, children }) {
   function removeWork(w, e) {
     e.stopPropagation();
     if (!window.confirm("确定删除这本书及其所有产出？")) return;
-    deleteWork(w.work_id).then(refresh);
+    setDeleteError("");
+    deleteWork(w.work_id)
+      .then(refresh)
+      .catch((err) => setDeleteError(err.message || "删除失败"));
   }
 
   return (
@@ -28,6 +33,16 @@ export default function AppShell({ activeWorkId, right, children }) {
           <span>书架</span>
         </Link>
         <nav className="flex-1 space-y-0.5 px-1.5">
+          {error && (
+            <div className="mb-1 rounded-card border border-danger-600/40 bg-danger-600/5 px-2 py-1 text-xs text-danger-600">
+              加载作品列表失败
+            </div>
+          )}
+          {deleteError && (
+            <div className="mb-1 rounded-card border border-danger-600/40 bg-danger-600/5 px-2 py-1 text-xs text-danger-600">
+              {deleteError}
+            </div>
+          )}
           {loading && <div className="px-2 py-1 text-xs text-ink-600">加载中…</div>}
           {!loading && works.length === 0 && (
             <div className="px-2 py-1 text-xs text-ink-600">暂无作品</div>

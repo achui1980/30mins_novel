@@ -212,3 +212,7 @@ class WorkListItem(BaseModel):
 class CreateWorkResponse(BaseModel):
     work_id: str
     status: Literal["queued"] = "queued"
+    # True when this upload's content hash matched an already-completed work
+    # and no new pipeline run was dispatched. Additive/optional so existing
+    # clients that ignore unknown fields are unaffected.
+    reused: bool = False

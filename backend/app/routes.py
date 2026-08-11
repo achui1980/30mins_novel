@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import threading
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -13,10 +15,22 @@ from .pipeline.orchestrator import run_pipeline
 
 router = APIRouter()
 
+# Each pipeline job is dispatched via BackgroundTasks, which for a sync
+# function runs it in a worker thread (not on the request's event loop), and
+# each such thread calls asyncio.run(...) to get its own private event loop.
+# A plain threading.Semaphore (thread-safe, blocking) is therefore the right
+# primitive here — an asyncio.Semaphore would be awaited from multiple
+# unrelated event loops/threads at once, which asyncio primitives don't
+# support safely. Jobs beyond the limit simply block in their worker thread
+# (status stays "queued", set by create_work before dispatch) until a slot
+# frees up.
+_job_semaphore = threading.Semaphore(config.MAX_CONCURRENT_JOBS)
+
 
 def _launch_pipeline(work_id, raw_path, filename, title, granularity) -> None:
     """Run the async pipeline on a fresh event loop in a background thread."""
-    asyncio.run(run_pipeline(work_id, raw_path, filename, title, granularity))
+    with _job_semaphore:
+        asyncio.run(run_pipeline(work_id, raw_path, filename, title, granularity))
 
 
 @router.post("/works", status_code=201, response_model=CreateWorkResponse)
@@ -38,10 +52,23 @@ async def create_work(
     if len(data) > config.MAX_UPLOAD_BYTES:
         raise HTTPException(413, f"文件过大（上限 {config.MAX_UPLOAD_BYTES // (1024*1024)}MB）")
 
+    content_sha256 = hashlib.sha256(data).hexdigest()
+    reused_work_id = store.find_completed_work_by_hash(content_sha256)
+    if reused_work_id is not None:
+        return CreateWorkResponse(work_id=reused_work_id, status="queued", reused=True)
+
     work_id = store.new_work_id()
     raw_path = store.save_upload(work_id, filename, data)
     title = filename.rsplit(".", 1)[0]
-    store.write_meta(work_id, {"filename": filename, "title": title, "granularity": granularity})
+    store.write_meta(
+        work_id,
+        {
+            "filename": filename,
+            "title": title,
+            "granularity": granularity,
+            "content_sha256": content_sha256,
+        },
+    )
 
     # Initialize queued status so it appears in listings immediately.
     store.get_status(work_id) or _init_status(work_id, title, granularity)
@@ -77,6 +104,11 @@ async def get_status(work_id: str):
     status = store.get_status(work_id)
     if status is None:
         raise HTTPException(404, "作品不存在")
+    if status.error:
+        # status.json on disk may hold a full Python traceback (see
+        # orchestrator.run_pipeline); never return that verbatim over the
+        # API — only the short exception message (its first line).
+        return status.model_copy(update={"error": status.error.splitlines()[0]})
     return status
 
 

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Network } from "vis-network/standalone";
 import { getGraph } from "../../api";
 import { CATEGORY_ORDER, categoryColor } from "../../constants";
 
@@ -28,70 +27,86 @@ export default function GraphTab({ id, setRight }) {
 
   useEffect(() => {
     if (!graph || !containerRef.current) return;
-    const rawNodes = graph.nodes || [];
 
-    const degree = {};
-    for (const e of edges) {
-      degree[e.source] = (degree[e.source] || 0) + 1;
-      degree[e.target] = (degree[e.target] || 0) + 1;
-    }
+    let cancelled = false;
+    let network = null;
 
-    let visibleNodes = rawNodes;
-    if (!showAllPlaces) {
-      const characters = rawNodes.filter((n) => n.node_type !== "place");
-      const places = rawNodes.filter((n) => n.node_type === "place");
-      const topPlaces = [...places]
-        .sort((a, b) => (degree[b.id] || 0) - (degree[a.id] || 0))
-        .slice(0, PLACE_TOP_N);
-      visibleNodes = [...characters, ...topPlaces];
-    }
-    const visibleIds = new Set(visibleNodes.map((n) => n.id));
+    async function buildNetwork() {
+      const { Network } = await import("vis-network/standalone");
+      if (cancelled || !containerRef.current) return;
 
-    const nodes = visibleNodes.map((n) => ({
-      id: n.id,
-      label: n.label,
-      shape: n.node_type === "place" ? "box" : "dot",
-      size: 12 + Math.min(20, (n.mention_count || 1) * 2),
-      color:
-        n.node_type === "place" ? { background: "#d9d9d9", border: "#b0b0b0" } : undefined,
-      _raw: n,
-    }));
-    const visEdges = edges
-      .filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target))
-      .map((e, i) => ({
-        id: `e${i}`,
-        from: e.source,
-        to: e.target,
-        color: { color: categoryColor(e.category) },
-        width: Math.max(1, Math.min(6, e.weight || 1)),
-        arrows: e.directed ? "to" : undefined,
-        _raw: e,
+      const rawNodes = graph.nodes || [];
+
+      const degree = {};
+      for (const e of edges) {
+        degree[e.source] = (degree[e.source] || 0) + 1;
+        degree[e.target] = (degree[e.target] || 0) + 1;
+      }
+
+      let visibleNodes = rawNodes;
+      if (!showAllPlaces) {
+        const characters = rawNodes.filter((n) => n.node_type !== "place");
+        const places = rawNodes.filter((n) => n.node_type === "place");
+        const topPlaces = [...places]
+          .sort((a, b) => (degree[b.id] || 0) - (degree[a.id] || 0))
+          .slice(0, PLACE_TOP_N);
+        visibleNodes = [...characters, ...topPlaces];
+      }
+      const visibleIds = new Set(visibleNodes.map((n) => n.id));
+
+      const nodes = visibleNodes.map((n) => ({
+        id: n.id,
+        label: n.label,
+        shape: n.node_type === "place" ? "box" : "dot",
+        size: 12 + Math.min(20, (n.mention_count || 1) * 2),
+        color:
+          n.node_type === "place" ? { background: "#d9d9d9", border: "#b0b0b0" } : undefined,
+        _raw: n,
       }));
+      const visEdges = edges
+        .filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target))
+        .map((e, i) => ({
+          id: `e${i}`,
+          from: e.source,
+          to: e.target,
+          color: { color: categoryColor(e.category) },
+          width: Math.max(1, Math.min(6, e.weight || 1)),
+          arrows: e.directed ? "to" : undefined,
+          _raw: e,
+        }));
 
-    const network = new Network(
-      containerRef.current,
-      { nodes, edges: visEdges },
-      {
-        nodes: { font: { size: 15, face: "PingFang SC, Microsoft YaHei, sans-serif" } },
-        edges: { smooth: { type: "continuous" } },
-        physics: { stabilization: { iterations: 150 }, barnesHut: { springLength: 130 } },
-        interaction: { hover: true, tooltipDelay: 120 },
-      }
-    );
+      if (cancelled || !containerRef.current) return;
 
-    network.on("click", (params) => {
-      if (params.nodes.length > 0) {
-        const n = nodes.find((x) => x.id === params.nodes[0]);
-        setDetail({ type: "node", data: n?._raw });
-      } else if (params.edges.length > 0) {
-        const e = visEdges.find((x) => x.id === params.edges[0]);
-        setDetail({ type: "edge", data: e?._raw });
-      } else {
-        setDetail(null);
-      }
-    });
+      network = new Network(
+        containerRef.current,
+        { nodes, edges: visEdges },
+        {
+          nodes: { font: { size: 15, face: "PingFang SC, Microsoft YaHei, sans-serif" } },
+          edges: { smooth: { type: "continuous" } },
+          physics: { stabilization: { iterations: 150 }, barnesHut: { springLength: 130 } },
+          interaction: { hover: true, tooltipDelay: 120 },
+        }
+      );
 
-    return () => network.destroy();
+      network.on("click", (params) => {
+        if (params.nodes.length > 0) {
+          const n = nodes.find((x) => x.id === params.nodes[0]);
+          setDetail({ type: "node", data: n?._raw });
+        } else if (params.edges.length > 0) {
+          const e = visEdges.find((x) => x.id === params.edges[0]);
+          setDetail({ type: "edge", data: e?._raw });
+        } else {
+          setDetail(null);
+        }
+      });
+    }
+
+    buildNetwork();
+
+    return () => {
+      cancelled = true;
+      if (network) network.destroy();
+    };
   }, [graph, edges, showAllPlaces]);
 
   useEffect(() => {

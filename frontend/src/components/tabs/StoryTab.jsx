@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { getBeats, getBeatStory } from "../../api";
+import { useAccordionCache } from "../../hooks/useAccordionCache";
 
 export default function StoryTab({ id, setRight }) {
   const [meta, setMeta] = useState(null);
   const [error, setError] = useState("");
-  const [open, setOpen] = useState(null);
-  const [beatState, setBeatState] = useState({});
+  const { open, itemState: beatState, toggle } = useAccordionCache();
 
   useEffect(() => {
     setRight(null);
@@ -15,21 +15,11 @@ export default function StoryTab({ id, setRight }) {
     getBeats(id).then(setMeta).catch((e) => setError(e.message));
   }, [id]);
 
-  async function toggleBeat(index) {
-    if (open === index) {
-      setOpen(null);
-      return;
-    }
-    setOpen(index);
-    const existing = beatState[index];
-    if (existing && (existing.story || existing.loading)) return;
-    setBeatState((s) => ({ ...s, [index]: { loading: true } }));
-    try {
+  function toggleBeat(index) {
+    return toggle(index, async () => {
       const res = await getBeatStory(id, index);
-      setBeatState((s) => ({ ...s, [index]: { loading: false, story: res.story } }));
-    } catch (e) {
-      setBeatState((s) => ({ ...s, [index]: { loading: false, error: e.message } }));
-    }
+      return res.story;
+    });
   }
 
   if (error) {
@@ -90,7 +80,7 @@ export default function StoryTab({ id, setRight }) {
                       </span>
                     )}
                     {st.error && <span className="text-danger-600">{st.error}</span>}
-                    {!st.loading && !st.error && (st.story || "（暂无内容）")}
+                    {!st.loading && !st.error && (st.data || "（暂无内容）")}
                   </div>
                 )}
               </div>

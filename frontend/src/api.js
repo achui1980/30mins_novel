@@ -16,28 +16,31 @@ async function json(res) {
   return res.json();
 }
 
+async function apiFetch(path, options) {
+  return json(await fetch(`${BASE}${path}`, options));
+}
+
 export async function createWork(file, granularity = "quick") {
   const form = new FormData();
   form.append("file", file);
   form.append("granularity", granularity);
-  const res = await fetch(`${BASE}/works`, { method: "POST", body: form });
-  return json(res);
+  return apiFetch(`/works`, { method: "POST", body: form });
 }
 
 export async function listWorks() {
-  return json(await fetch(`${BASE}/works`));
+  return apiFetch(`/works`);
 }
 
 export async function getStatus(id) {
-  return json(await fetch(`${BASE}/works/${id}/status`));
+  return apiFetch(`/works/${id}/status`);
 }
 
 export async function getWork(id) {
-  return json(await fetch(`${BASE}/works/${id}`));
+  return apiFetch(`/works/${id}`);
 }
 
 export async function getGraph(id) {
-  return json(await fetch(`${BASE}/works/${id}/graph`));
+  return apiFetch(`/works/${id}/graph`);
 }
 
 export function graphHtmlUrl(id) {
@@ -45,44 +48,41 @@ export function graphHtmlUrl(id) {
 }
 
 export async function getChapterSummary(id, chapterId) {
-  const res = await fetch(`${BASE}/works/${id}/chapters/${chapterId}/summary`, {
+  return apiFetch(`/works/${id}/chapters/${chapterId}/summary`, {
     method: "POST",
   });
-  return json(res);
 }
 
 export async function getBeats(id) {
-  return json(await fetch(`${BASE}/works/${id}/beats`));
+  return apiFetch(`/works/${id}/beats`);
 }
 
 export async function getBeatStory(id, beatIndex) {
-  const res = await fetch(`${BASE}/works/${id}/beats/${beatIndex}/story`, {
+  return apiFetch(`/works/${id}/beats/${beatIndex}/story`, {
     method: "POST",
   });
-  return json(res);
 }
 
 export async function deleteWork(id) {
-  return json(await fetch(`${BASE}/works/${id}`, { method: "DELETE" }));
+  return apiFetch(`/works/${id}`, { method: "DELETE" });
 }
 
 export async function getAskHistory(id) {
-  return json(await fetch(`${BASE}/works/${id}/ask`));
+  return apiFetch(`/works/${id}/ask`);
 }
 
 export async function askQuestion(id, question) {
-  const res = await fetch(`${BASE}/works/${id}/ask`, {
+  return apiFetch(`/works/${id}/ask`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question }),
   });
-  return json(res);
 }
 
 export async function getTimeline(id) {
-  return json(await fetch(`${BASE}/works/${id}/timeline`));
+  return apiFetch(`/works/${id}/timeline`);
 }
 
 export async function getChapterText(id, chapterId) {
-  return json(await fetch(`${BASE}/works/${id}/chapters/${chapterId}/text`));
+  return apiFetch(`/works/${id}/chapters/${chapterId}/text`);
 }

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import traceback
 from pathlib import Path
 
@@ -27,6 +28,8 @@ from .graph import run_graphify
 from .merge import EntityRegistry, merge_arcs
 from .parse import ParseError, parse_upload
 from .summarize import label_communities, summarize
+
+logger = logging.getLogger("novel_kg.orchestrator")
 
 
 def _status_path(work_id: str) -> Path:
@@ -196,6 +199,11 @@ async def run_pipeline(
         status.message = f"处理失败：{exc}"
         write_status(status)
     except Exception as exc:  # noqa: BLE001
+        # Full traceback is logged server-side and kept in status.json on disk
+        # (local file, not returned verbatim by the API — see routes.get_status)
+        # for offline debugging; the API-facing summary is derived from
+        # status.error's first line by routes.py.
+        logger.exception("pipeline failed for work_id=%s", work_id)
         status.phase = "failed"
         status.error = f"{exc}\n{traceback.format_exc()}"
         status.message = f"处理失败：{exc}"

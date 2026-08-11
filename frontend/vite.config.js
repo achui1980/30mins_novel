@@ -5,6 +5,15 @@ import react from "@vitejs/plugin-react";
 // frontend can call same-origin "/api/..." paths during development.
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom", "react-router-dom"],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

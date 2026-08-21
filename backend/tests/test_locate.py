@@ -102,6 +102,64 @@ def test_patch_graph_edge_locations_happy_path(tmp_path):
     assert "source_location" not in edges[("n3", "n4")]
 
 
+def test_patch_graph_edge_locations_registry_without_chapter_id_is_noop(tmp_path):
+    graph_json_path = tmp_path / "graph.json"
+    graph_json_path.write_text(
+        json.dumps(
+            {
+                "nodes": [{"id": "n1"}, {"id": "n2"}],
+                "links": [
+                    {"source": "n1", "target": "n2", "category": "爱人", "source_location": ""},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    registry = EntityRegistry()
+    # Normally-constructed RelationRecord: no chapter_id field exists today
+    # (it lands in a separate, already-planned task). Accessing rec.chapter_id
+    # inside patch_graph_edge_locations must hit AttributeError and continue,
+    # leaving the edge's source_location untouched.
+    rec = RelationRecord(
+        source="贾宝玉", target="林黑玉", category="爱人", evidence="林黑玉忽然到来"
+    )
+    registry.relationships[("贾宝玉", "林黑玉", "爱人")] = rec
+
+    label_to_id = {"贾宝玉": "n1", "林黑玉": "n2"}
+    paragraphs_by_chapter = {
+        "ch0001": ["贾宝玉在园中读书。", "林黑玉忽然到来，两人相谈甚欢。"]
+    }
+
+    patch_graph_edge_locations(graph_json_path, registry, label_to_id, paragraphs_by_chapter)
+
+    data = json.loads(graph_json_path.read_text(encoding="utf-8"))
+    edge = next(e for e in data["links"] if e["source"] == "n1" and e["target"] == "n2")
+    assert edge["source_location"] == ""
+
+
+def test_patch_graph_edge_locations_unhashable_category_never_raises(tmp_path):
+    graph_json_path = tmp_path / "graph.json"
+    graph_json_path.write_text(
+        json.dumps(
+            {
+                "nodes": [{"id": "n1"}, {"id": "n2"}],
+                "links": [
+                    {"source": "n1", "target": "n2", "category": ["not", "hashable"]},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    registry = EntityRegistry()
+    label_to_id: dict[str, str] = {}
+    paragraphs_by_chapter: dict[str, list[str]] = {}
+
+    # Must not raise TypeError: unhashable type when hashing the lookup key.
+    patch_graph_edge_locations(graph_json_path, registry, label_to_id, paragraphs_by_chapter)
+
+
 def test_patch_graph_edge_locations_malformed_input_never_raises(tmp_path):
     registry = EntityRegistry()
 

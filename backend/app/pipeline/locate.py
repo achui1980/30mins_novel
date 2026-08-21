@@ -119,10 +119,10 @@ def patch_graph_edge_locations(
     for edge in edge_list:
         try:
             key = (edge.get("source"), edge.get("target"), edge.get("category") or edge.get("relation"))
+            loc = loc_by_pair.get(key)
+            if loc:
+                edge["source_location"] = loc
         except (AttributeError, TypeError):
             continue
-        loc = loc_by_pair.get(key)
-        if loc:
-            edge["source_location"] = loc
 
     write_json_atomic(graph_json_path, data, indent=2, ensure_ascii=False)

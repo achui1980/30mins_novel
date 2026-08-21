@@ -35,6 +35,7 @@ SYSTEM_PROMPT = (
     "避免地点数量远超人物数量。\n"
     "- 关系 category 必须是以下之一：家人, 爱人, 朋友, 敌人, 师徒, 主仆, 同盟, 其他。\n"
     "- 关系必须给出简短 detail 与原文 evidence，并估计 confidence(0-1)。\n"
+    "- 若能找到支持该事件的原文片段，请在事件的 evidence 字段中给出简短摘录；找不到可留空，不要编造。\n"
     "- 只抽取文中明确出现或强烈暗示的信息，不要编造。"
 )
 
@@ -133,6 +134,7 @@ def fake_extract_block(block: Block) -> ChunkExtraction:
                 chapter=block.chapter_id,
                 participants=top[:3],
                 order_hint=block.order,
+                evidence=block.text[:40],
             )
         )
     return ChunkExtraction(characters=characters, places=places, relationships=relationships, events=events)

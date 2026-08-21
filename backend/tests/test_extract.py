@@ -49,3 +49,14 @@ def test_fake_extract_block_places_empty_when_not_enough_candidates():
     # over for places after the top-5 characters are chosen — must not error.
     ext = fake_extract_block(_block("张三张三李四李四"))
     assert isinstance(ext.places, list)
+
+
+def test_fake_extract_block_events_have_evidence_substring():
+    ext = fake_extract_block(_block(SAMPLE_TEXT))
+    assert ext.events, "fake extraction should produce at least one event"
+    for event in ext.events:
+        assert event.evidence == SAMPLE_TEXT[:40]
+
+
+def test_system_prompt_mentions_event_evidence():
+    assert "若能找到支持该事件的原文片段" in SYSTEM_PROMPT

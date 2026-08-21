@@ -25,6 +25,7 @@ from ..models import (
 from .chunk import chunk_novel
 from .extract import extract_arcs
 from .graph import run_graphify
+from .locate import locate_paragraph, patch_graph_edge_locations, split_paragraphs
 from .merge import EntityRegistry, merge_arcs
 from .parse import ParseError, parse_upload
 from .summarize import label_communities, summarize
@@ -85,6 +86,9 @@ async def run_pipeline(
         (config.work_dir(work_id) / "chapters.json").write_text(
             json.dumps(chapters_payload, ensure_ascii=False), encoding="utf-8"
         )
+        paragraphs_by_chapter = {
+            cid: split_paragraphs(v.get("text") or "") for cid, v in chapters_payload.items()
+        }
         status.message = f"解析完成，共 {len(novel.chapters)} 章"
         write_status(status)
 
@@ -126,6 +130,11 @@ async def run_pipeline(
         if not registry.characters:
             raise ParseError("未能抽取到任何人物，无法构建图谱")
 
+        for e in registry.events:
+            e["paragraph_index"] = locate_paragraph(
+                paragraphs_by_chapter.get(e.get("chapter") or "", []), e.get("evidence") or ""
+            )
+
         # Persist raw events immediately after extraction (before graph/summarize)
         # so timeline data survives even if a later phase fails (design §4.3).
         (config.work_dir(work_id) / "events.json").write_text(
@@ -148,6 +157,8 @@ async def run_pipeline(
             graph_html,
             community_labeler=label_communities,
         )
+
+        patch_graph_edge_locations(graph_json, registry, artifacts.label_to_id, paragraphs_by_chapter)
 
         # 5. Summarize -------------------------------------------------------
         status.phase = "summarizing"

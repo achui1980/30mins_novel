@@ -81,6 +81,16 @@ def test_pipeline_end_to_end(temp_data_root):
     assert events, "no events persisted"
     assert all({"summary", "chapter", "participants", "order_hint"} <= set(e.keys()) for e in events)
 
+    events_path = config.work_dir(work_id) / "events.json"
+    events = json.loads(events_path.read_text(encoding="utf-8"))
+    for e in events:
+        assert {"summary", "chapter", "participants", "order_hint", "evidence", "paragraph_index"} <= set(e.keys())
+    assert any(e["paragraph_index"] is not None for e in events), "expected at least one located event"
+
+    graph_data = json.loads(store.graph_json_path(work_id).read_text(encoding="utf-8"))
+    edge_list = graph_data.get("links") if graph_data.get("links") is not None else graph_data.get("edges", [])
+    assert any(edge.get("source_location") for edge in edge_list), "expected at least one located edge"
+
     # summary.json -> valid WorkPackage.
     pkg = store.get_package(work_id)
     assert pkg is not None

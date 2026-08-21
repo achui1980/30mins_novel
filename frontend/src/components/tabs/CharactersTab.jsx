@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getGraph, getTimeline } from "../../api";
 import { categoryColor } from "../../constants";
 
-export default function CharactersTab({ id, pkg, setRight }) {
+export default function CharactersTab({ id, pkg, setRight, onViewChapter }) {
   const mains = pkg.main_characters || [];
   const [selectedId, setSelectedId] = useState(mains[0]?.id || null);
   const [graph, setGraph] = useState(null);
@@ -30,7 +30,7 @@ export default function CharactersTab({ id, pkg, setRight }) {
     const relations = edges.map((e) => {
       const otherId = e.source === selectedId ? e.target : e.source;
       const other = graph?.nodes?.find((n) => n.id === otherId);
-      return { label: other?.label || otherId, category: e.category, otherId };
+      return { label: other?.label || otherId, category: e.category, otherId, sourceLocation: e.source_location };
     });
     const chapters = (events || [])
       .filter((ev) => ev.participants?.includes(label))
@@ -67,6 +67,18 @@ export default function CharactersTab({ id, pkg, setRight }) {
                     {r.label}
                   </button>
                   （{r.category}）
+                  {r.sourceLocation && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const [chapterId, para] = r.sourceLocation.split("#p");
+                        onViewChapter?.(chapterId, para !== undefined ? Number(para) : undefined);
+                      }}
+                      className="ml-2 text-xs text-ink-600 hover:text-seal-600 hover:underline"
+                    >
+                      查看原文 →
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>

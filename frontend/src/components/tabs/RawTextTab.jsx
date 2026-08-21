@@ -166,6 +166,10 @@ export default function RawTextTab({ id, ls, jump, setRight, onAskAboutSelection
   useEffect(() => {
     if (restoredRef.current === progressKey) return;
     restoredRef.current = progressKey;
+    // A cross-tab "查看原文→" jump targeting this mount takes priority over
+    // restoring the saved reading position: it's a more specific, intentional
+    // user action, and the jump effect below will own the scroll instead.
+    if (jump && jump.nonce !== lastHandledNonceRef.current) return;
     const saved = localStorage.getItem(progressKey);
     if (!saved) return;
     try {
@@ -178,7 +182,7 @@ export default function RawTextTab({ id, ls, jump, setRight, onAskAboutSelection
     } catch {
       localStorage.removeItem(progressKey); // clear corrupted saved progress
     }
-  }, [progressKey, loadChapter]);
+  }, [progressKey, loadChapter, jump]);
 
   useEffect(() => {
     if (!jump || jump.nonce === lastHandledNonceRef.current) return;

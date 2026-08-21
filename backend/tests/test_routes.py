@@ -97,7 +97,7 @@ def test_get_chapter_text_returns_full_chapter(client):
     body = resp.json()
     assert body["chapter_id"] == "ch0001"
     assert body["title"] == "第一章"
-    assert body["text"] == "这是第一章的正文内容。"
+    assert body["paragraphs"] == ["这是第一章的正文内容。"]
 
 
 def test_get_chapter_text_404_when_chapters_missing(client):

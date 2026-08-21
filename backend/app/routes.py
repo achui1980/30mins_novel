@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from . import config, store
 from .models import ChapterText, CreateWorkResponse, WorkStatus
+from .pipeline.locate import split_paragraphs
 from .pipeline.orchestrator import run_pipeline
 
 router = APIRouter()
@@ -169,7 +170,7 @@ async def get_chapter_text(work_id: str, chapter_id: str):
     return ChapterText(
         chapter_id=chapter_id,
         title=chapter.get("title") or chapter_id,
-        text=chapter.get("text") or "",
+        paragraphs=split_paragraphs(chapter.get("text") or ""),
     )
 
 

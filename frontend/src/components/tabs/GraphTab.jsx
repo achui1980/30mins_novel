@@ -4,7 +4,7 @@ import { CATEGORY_ORDER, categoryColor } from "../../constants";
 
 const PLACE_TOP_N = 15;
 
-export default function GraphTab({ id, setRight }) {
+export default function GraphTab({ id, setRight, onViewChapter }) {
   const containerRef = useRef(null);
   const [graph, setGraph] = useState(null);
   const [error, setError] = useState("");
@@ -142,6 +142,19 @@ export default function GraphTab({ id, setRight }) {
           {detail.data.detail && <p className="mt-3 text-sm text-ink-900">{detail.data.detail}</p>}
           {detail.data.evidence && (
             <p className="mt-3 text-sm italic text-ink-600">「{detail.data.evidence}」</p>
+          )}
+          {detail.data.source_location && (
+            <button
+              type="button"
+              onClick={() => {
+                const loc = detail.data.source_location;
+                const [chapterId, para] = loc.split("#p");
+                onViewChapter?.(chapterId, para !== undefined ? Number(para) : undefined);
+              }}
+              className="mt-2 text-xs text-ink-600 hover:text-seal-600 hover:underline"
+            >
+              查看原文 →
+            </button>
           )}
         </div>
       );

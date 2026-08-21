@@ -65,6 +65,7 @@ def build_timeline(events: list[dict], chapters: dict) -> list[TimelineEvent]:
                     chapter_title=chapter_title,
                     summary=e.get("summary", ""),
                     participants=list(e.get("participants") or []),
+                    paragraph_index=e.get("paragraph_index"),
                 )
             )
             seq += 1

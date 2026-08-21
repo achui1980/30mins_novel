@@ -50,3 +50,13 @@ def test_build_timeline_missing_chapter_key_defaults_to_empty_string():
     events = [{"summary": "无章节事件", "participants": [], "order_hint": 0}]
     timeline = build_timeline(events, CHAPTERS)
     assert timeline[0].chapter_id == ""
+
+
+def test_build_timeline_carries_paragraph_index():
+    events = [
+        {"summary": "相遇", "chapter": "ch0001", "participants": ["贾宝玉"], "order_hint": 0, "paragraph_index": 2},
+        {"summary": "分别", "chapter": "ch0002", "participants": ["林黑玉"], "order_hint": 0, "paragraph_index": None},
+    ]
+    timeline = build_timeline(events, CHAPTERS)
+    assert timeline[0].paragraph_index == 2
+    assert timeline[1].paragraph_index is None

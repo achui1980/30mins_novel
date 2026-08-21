@@ -1,8 +1,12 @@
+import json
+
 from app.pipeline.locate import (
     locate_paragraph,
+    patch_graph_edge_locations,
     resolve_source_location,
     split_paragraphs,
 )
+from app.pipeline.merge import EntityRegistry, RelationRecord
 
 
 def test_split_paragraphs_blank_line_delimited():
@@ -61,3 +65,59 @@ def test_resolve_source_location_with_unmatched_paragraph_falls_back_to_chapter(
 def test_resolve_source_location_with_no_chapter_returns_empty_string():
     assert resolve_source_location("", "任意引用", {}) == ""
     assert resolve_source_location(None, "任意引用", {}) == ""
+
+
+def test_patch_graph_edge_locations_happy_path(tmp_path):
+    graph_json_path = tmp_path / "graph.json"
+    graph_json_path.write_text(
+        json.dumps(
+            {
+                "nodes": [{"id": "n1"}, {"id": "n2"}, {"id": "n3"}, {"id": "n4"}],
+                "links": [
+                    {"source": "n1", "target": "n2", "category": "爱人"},
+                    {"source": "n3", "target": "n4", "category": "朋友"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    registry = EntityRegistry()
+    rec = RelationRecord(
+        source="贾宝玉", target="林黑玉", category="爱人", evidence="林黑玉忽然到来"
+    )
+    rec.chapter_id = "ch0001"  # not a declared RelationRecord field yet; set dynamically
+    registry.relationships[("贾宝玉", "林黑玉", "爱人")] = rec
+
+    label_to_id = {"贾宝玉": "n1", "林黑玉": "n2"}
+    paragraphs_by_chapter = {
+        "ch0001": ["贾宝玉在园中读书。", "林黑玉忽然到来，两人相谈甚欢。"]
+    }
+
+    patch_graph_edge_locations(graph_json_path, registry, label_to_id, paragraphs_by_chapter)
+
+    data = json.loads(graph_json_path.read_text(encoding="utf-8"))
+    edges = {(e["source"], e["target"]): e for e in data["links"]}
+    assert edges[("n1", "n2")]["source_location"] == "ch0001#p1"
+    assert "source_location" not in edges[("n3", "n4")]
+
+
+def test_patch_graph_edge_locations_malformed_input_never_raises(tmp_path):
+    registry = EntityRegistry()
+
+    # Missing file: no-op, no exception, no file created.
+    missing_path = tmp_path / "missing.json"
+    patch_graph_edge_locations(missing_path, registry, {}, {})
+    assert not missing_path.exists()
+
+    # Invalid JSON content: no-op, file left untouched.
+    invalid_path = tmp_path / "invalid.json"
+    invalid_path.write_text("{not valid json", encoding="utf-8")
+    patch_graph_edge_locations(invalid_path, registry, {}, {})
+    assert invalid_path.read_text(encoding="utf-8") == "{not valid json"
+
+    # Valid JSON but non-dict top level: no-op, file left untouched.
+    non_dict_path = tmp_path / "non_dict.json"
+    non_dict_path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+    patch_graph_edge_locations(non_dict_path, registry, {}, {})
+    assert json.loads(non_dict_path.read_text(encoding="utf-8")) == [1, 2, 3]

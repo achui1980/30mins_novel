@@ -11,6 +11,11 @@ from __future__ import annotations
 import difflib
 import json
 import re
+from pathlib import Path
+
+from graphify.paths import write_json_atomic
+
+from .merge import EntityRegistry
 
 _PARA_SPLIT_RE = re.compile(r"\n\s*\n+")  # blank-line-delimited paragraphs
 FUZZY_MATCH_THRESHOLD = 0.6
@@ -69,7 +74,10 @@ def resolve_source_location(
 
 
 def patch_graph_edge_locations(
-    graph_json_path, registry, label_to_id: dict, paragraphs_by_chapter: dict[str, list[str]]
+    graph_json_path: Path,
+    registry: EntityRegistry,
+    label_to_id: dict[str, str],
+    paragraphs_by_chapter: dict[str, list[str]],
 ) -> None:
     """Patch graph.json's edges in place with resolved `source_location`.
 
@@ -78,20 +86,43 @@ def patch_graph_edge_locations(
     canonical character names, so `label_to_id` (from GraphArtifacts) is the
     bridge. Edges whose relationship can't be resolved (should not normally
     happen) are left untouched.
+
+    Best-effort: NEVER raises. Any failure to read, parse, or interpret
+    graph.json (missing file, invalid JSON, unexpected shapes, malformed
+    registry records or edges) results in a silent no-op or partial patch —
+    callers must treat "graph.json unchanged" as success, not as an error to
+    propagate. See module docstring.
     """
-    data = json.loads(graph_json_path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(graph_json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(data, dict):
+        return
+
     edge_list = data.get("links") if data.get("links") is not None else data.get("edges", [])
+    if not isinstance(edge_list, list):
+        edge_list = []
+
     loc_by_pair: dict[tuple[str, str, str], str] = {}
     for rec in registry.relationships.values():
-        sid, tid = label_to_id.get(rec.source), label_to_id.get(rec.target)
-        if sid is None or tid is None:
+        try:
+            sid, tid = label_to_id.get(rec.source), label_to_id.get(rec.target)
+            if sid is None or tid is None:
+                continue
+            loc_by_pair[(sid, tid, rec.category)] = resolve_source_location(
+                rec.chapter_id, rec.evidence, paragraphs_by_chapter
+            )
+        except (AttributeError, TypeError):
             continue
-        loc_by_pair[(sid, tid, rec.category)] = resolve_source_location(
-            rec.chapter_id, rec.evidence, paragraphs_by_chapter
-        )
+
     for edge in edge_list:
-        key = (edge.get("source"), edge.get("target"), edge.get("category") or edge.get("relation"))
+        try:
+            key = (edge.get("source"), edge.get("target"), edge.get("category") or edge.get("relation"))
+        except (AttributeError, TypeError):
+            continue
         loc = loc_by_pair.get(key)
         if loc:
             edge["source_location"] = loc
-    graph_json_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    write_json_atomic(graph_json_path, data, indent=2, ensure_ascii=False)

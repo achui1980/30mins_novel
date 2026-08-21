@@ -53,8 +53,8 @@ export default function ReaderPage() {
     setTab("ask");
   }
 
-  function viewChapter(chapterId) {
-    setRawJump({ chapterId, nonce: Date.now() });
+  function viewChapter(chapterId, paragraphIndex) {
+    setRawJump({ chapterId, paragraphIndex, nonce: Date.now() });
     setTab("raw");
   }
 
@@ -130,7 +130,7 @@ export default function ReaderPage() {
               <OverviewTab pkg={pkg} ls={ls} onAsk={askAbout} setRight={setRight} />
             )}
             {tab === "characters" && (
-              <CharactersTab id={id} pkg={pkg} setRight={setRight} />
+              <CharactersTab id={id} pkg={pkg} setRight={setRight} onViewChapter={viewChapter} />
             )}
             {tab === "story" && <StoryTab id={id} setRight={setRight} />}
             {tab === "raw" && (
@@ -140,7 +140,7 @@ export default function ReaderPage() {
             {tab === "timeline" && (
               <TimelineTab id={id} setRight={setRight} onViewChapter={viewChapter} />
             )}
-            {tab === "graph" && <GraphTab id={id} setRight={setRight} />}
+            {tab === "graph" && <GraphTab id={id} setRight={setRight} onViewChapter={viewChapter} />}
             {tab === "ask" && (
               <AskTab
                 id={id}

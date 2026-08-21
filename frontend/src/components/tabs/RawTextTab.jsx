@@ -6,6 +6,7 @@ export default function RawTextTab({ id, ls, jump, setRight }) {
   const [chapterState, setChapterState] = useState({}); // chapterId -> { loading, paragraphs }
   const chapterRefs = useRef({});
   const lastHandledNonceRef = useRef(null);
+  const highlightTimeoutRef = useRef(null);
   const progressKey = `novel_kg_reader_progress_${id}`;
   const restoredRef = useRef(null);
 
@@ -181,10 +182,41 @@ export default function RawTextTab({ id, ls, jump, setRight }) {
   useEffect(() => {
     if (!jump || jump.nonce === lastHandledNonceRef.current) return;
     lastHandledNonceRef.current = jump.nonce;
-    loadChapter(jump.chapterId);
-    setTimeout(() => {
-      chapterRefs.current[jump.chapterId]?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
+    let cancelled = false;
+    const targetId = jump.paragraphIndex != null ? `p-${jump.chapterId}-${jump.paragraphIndex}` : null;
+    const attemptScroll = (retriesLeft) => {
+      if (cancelled) return;
+      const el = targetId ? document.getElementById(targetId) : chapterRefs.current[jump.chapterId];
+      if (!el && targetId && retriesLeft > 0) {
+        setTimeout(() => attemptScroll(retriesLeft - 1), 100);
+        return;
+      }
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (targetId && el) {
+        if (highlightTimeoutRef.current) {
+          clearTimeout(highlightTimeoutRef.current.timeoutId);
+          if (highlightTimeoutRef.current.el !== el) {
+            // A different paragraph was mid-highlight; remove its highlight
+            // immediately instead of leaving it stuck once its timer is cancelled.
+            highlightTimeoutRef.current.el.classList.remove("bg-amber-100");
+          }
+        }
+        el.classList.add("bg-amber-100");
+        highlightTimeoutRef.current = {
+          el,
+          timeoutId: setTimeout(() => el.classList.remove("bg-amber-100"), 1200),
+        };
+      }
+    };
+    loadChapter(jump.chapterId).then(() => {
+      // Wait for React to commit + paint the post-load DOM before looking up the
+      // target element; fall back to a few bounded retries in case unrelated
+      // IntersectionObserver-driven re-renders delay the commit further.
+      requestAnimationFrame(() => requestAnimationFrame(() => attemptScroll(8)));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [jump, loadChapter]);
 
   const themeClasses = theme === "night" ? "bg-ink-900 text-paper-50" : "bg-white text-ink-900";

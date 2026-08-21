@@ -7,6 +7,21 @@ export default function RawTextTab({ id, ls, jump, setRight }) {
   const chapterRefs = useRef({});
   const lastHandledNonceRef = useRef(null);
 
+  const [fontSize, setFontSize] = useState(() => Number(localStorage.getItem("novel_kg_reader_font_size")) || 16);
+  const [theme, setTheme] = useState(() => localStorage.getItem("novel_kg_reader_theme") || "day");
+
+  useEffect(() => { localStorage.setItem("novel_kg_reader_font_size", String(fontSize)); }, [fontSize]);
+  useEffect(() => { localStorage.setItem("novel_kg_reader_theme", theme); }, [theme]);
+
+  const FONT_SIZES = [14, 16, 18, 20, 22];
+  function stepFontSize(delta) {
+    setFontSize((cur) => {
+      const idx = FONT_SIZES.indexOf(cur);
+      const nextIdx = Math.min(FONT_SIZES.length - 1, Math.max(0, (idx === -1 ? 1 : idx) + delta));
+      return FONT_SIZES[nextIdx];
+    });
+  }
+
   const loadChapter = useCallback(
     async (chapterId) => {
       let shouldFetch = false;
@@ -78,31 +93,42 @@ export default function RawTextTab({ id, ls, jump, setRight }) {
     }, 0);
   }, [jump, loadChapter]);
 
+  const themeClasses = theme === "night" ? "bg-ink-900 text-paper-50" : "bg-white text-ink-900";
+
   return (
-    <div className="mx-auto max-w-2xl">
-      {chapters.map((c) => {
-        const st = chapterState[c.chapter];
-        return (
-          <div
-            key={c.chapter}
-            ref={(el) => {
-              chapterRefs.current[c.chapter] = el;
-            }}
-            data-chapter-id={c.chapter}
-            className="mb-8"
-          >
-            <h2 className="mb-3 text-lg font-semibold text-ink-800">{c.title || c.chapter}</h2>
-            {!st && <p className="text-sm text-ink-400">滚动到此处以加载正文…</p>}
-            {st?.loading && <p className="text-sm text-ink-400">加载中…</p>}
-            {st?.error && <p className="text-sm text-red-500">加载失败，请重试</p>}
-            {st?.paragraphs?.map((p, i) => (
-              <p key={i} id={`p-${c.chapter}-${i}`} data-chapter={c.chapter} data-para={i} className="mb-3 leading-relaxed text-ink-800">
-                {p}
-              </p>
-            ))}
-          </div>
-        );
-      })}
+    <div className={`rounded-md p-4 ${themeClasses}`}>
+      <div className="mb-4 flex items-center gap-3 text-sm">
+        <button type="button" onClick={() => stepFontSize(-1)} className="rounded border px-2 py-1">A-</button>
+        <button type="button" onClick={() => stepFontSize(1)} className="rounded border px-2 py-1">A+</button>
+        <button type="button" onClick={() => setTheme((t) => (t === "night" ? "day" : "night"))} className="rounded border px-2 py-1">
+          {theme === "night" ? "☀️ 日间" : "🌙 夜间"}
+        </button>
+      </div>
+      <div className="mx-auto max-w-2xl" style={{ fontSize }}>
+        {chapters.map((c) => {
+          const st = chapterState[c.chapter];
+          return (
+            <div
+              key={c.chapter}
+              ref={(el) => {
+                chapterRefs.current[c.chapter] = el;
+              }}
+              data-chapter-id={c.chapter}
+              className="mb-8"
+            >
+              <h2 className="mb-3 text-lg font-semibold text-ink-800">{c.title || c.chapter}</h2>
+              {!st && <p className="text-sm text-ink-400">滚动到此处以加载正文…</p>}
+              {st?.loading && <p className="text-sm text-ink-400">加载中…</p>}
+              {st?.error && <p className="text-sm text-red-500">加载失败，请重试</p>}
+              {st?.paragraphs?.map((p, i) => (
+                <p key={i} id={`p-${c.chapter}-${i}`} data-chapter={c.chapter} data-para={i} className="mb-3 leading-relaxed text-ink-800">
+                  {p}
+                </p>
+              ))}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

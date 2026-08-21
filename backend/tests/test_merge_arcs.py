@@ -111,3 +111,48 @@ def test_merge_arcs_l2_alias_index_repoints_to_survivor(monkeypatch):
     assert merged.resolve_character("林妹妹") == "林黛玉"
     assert "林妹妹" not in merged.characters
     assert merged.characters["林黛玉"].mention_count == 2
+
+
+def test_merge_arcs_l2_confirm_preserves_chapter_id_with_longest_evidence(monkeypatch):
+    monkeypatch.setattr(config, "USE_FAKE_LLM", False)
+    a = _arc([Character(name="林妹妹")])
+    a.add_relationship(
+        Relationship(source="林妹妹", target="贾宝玉", category=RelationCategory.LOVER,
+                      evidence="短", confidence=0.5),
+        chapter_id="ch0001",
+    )
+    b = _arc([Character(name="林妹妹"), Character(name="林黛玉")])
+    b.add_relationship(
+        Relationship(source="林黛玉", target="贾宝玉", category=RelationCategory.LOVER,
+                      evidence="更长的一段原文证据内容", confidence=0.6),
+        chapter_id="ch0002",
+    )
+    # Both relationships target 贾宝玉 with the same category, so once 林妹妹
+    # is aliased to 林黛玉 by the L2 confirm step, they collide into the same
+    # (source, target, category) key inside _apply_merge and must be merged
+    # there (not in add_relationship, which never sees this collision).
+    merged = merge_arcs([a, b], confirmer=lambda batches: [
+        {"names": ["林妹妹", "林黛玉"], "final_name": "林黛玉"}
+    ])
+    key = (min("林黛玉", "贾宝玉"), max("林黛玉", "贾宝玉"), "爱人")
+    rec = merged.relationships[key]
+    assert rec.evidence == "更长的一段原文证据内容"
+    assert rec.chapter_id == "ch0002"
+
+
+def test_merge_arcs_preserves_chapter_id_with_longest_evidence():
+    a = _arc([Character(name="贾宝玉"), Character(name="林黑玉")])
+    a.add_relationship(
+        Relationship(source="贾宝玉", target="林黑玉", category="爱人", evidence="短", confidence=0.5),
+        chapter_id="ch0001",
+    )
+    b = _arc([Character(name="贾宝玉"), Character(name="林黑玉")])
+    b.add_relationship(
+        Relationship(source="贾宝玉", target="林黑玉", category="爱人", evidence="更长的一段原文证据", confidence=0.6),
+        chapter_id="ch0002",
+    )
+    merged = merge_arcs([a, b], confirm=False)
+    key = (min("贾宝玉", "林黑玉"), max("贾宝玉", "林黑玉"), "爱人")
+    rec = merged.relationships[key]
+    assert rec.evidence == "更长的一段原文证据"
+    assert rec.chapter_id == "ch0002"

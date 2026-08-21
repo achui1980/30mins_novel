@@ -66,6 +66,7 @@ class RelationRecord:
     evidence: str = ""
     confidence: float = 0.0
     count: int = 0
+    chapter_id: str = ""
 
 
 class EntityRegistry:
@@ -139,7 +140,7 @@ class EntityRegistry:
             rec.description = place.description
         return canonical
 
-    def add_relationship(self, rel: Relationship) -> None:
+    def add_relationship(self, rel: Relationship, chapter_id: str = "") -> None:
         src = self.resolve_character(rel.source) or rel.source.strip()
         tgt = self.resolve_character(rel.target) or rel.target.strip()
         if src == tgt:
@@ -161,6 +162,7 @@ class EntityRegistry:
             rec = RelationRecord(
                 source=src, target=tgt, category=category,
                 detail=rel.detail, evidence=rel.evidence, confidence=rel.confidence,
+                chapter_id=chapter_id,
             )
             self.relationships[key] = rec
         rec.count += 1
@@ -169,6 +171,7 @@ class EntityRegistry:
             rec.detail = rel.detail
         if len(rel.evidence) > len(rec.evidence):
             rec.evidence = rel.evidence
+            rec.chapter_id = chapter_id
 
     def add_extraction(self, extraction: ChunkExtraction, chapter_id: str) -> None:
         for c in extraction.characters:
@@ -176,7 +179,7 @@ class EntityRegistry:
         for p in extraction.places:
             self.add_place(p)
         for r in extraction.relationships:
-            self.add_relationship(r)
+            self.add_relationship(r, chapter_id)
         for e in extraction.events:
             self.events.append(
                 {
@@ -184,6 +187,7 @@ class EntityRegistry:
                     "chapter": e.chapter or chapter_id,
                     "participants": e.participants,
                     "order_hint": e.order_hint,
+                    "evidence": e.evidence,
                 }
             )
 
@@ -351,7 +355,8 @@ def _apply_merge(merged, src, tgt):
         if old is None:
             new_rels[key] = RelationRecord(source=ns, target=nt, category=cat,
                                            detail=rec.detail, evidence=rec.evidence,
-                                           confidence=rec.confidence, count=rec.count)
+                                           confidence=rec.confidence, count=rec.count,
+                                           chapter_id=rec.chapter_id)
         else:
             old.count += rec.count
             old.confidence = max(old.confidence, rec.confidence)
@@ -359,6 +364,7 @@ def _apply_merge(merged, src, tgt):
                 old.detail = rec.detail
             if len(rec.evidence) > len(old.evidence):
                 old.evidence = rec.evidence
+                old.chapter_id = rec.chapter_id
     merged.relationships = new_rels
     del merged.characters[src]
 
@@ -375,9 +381,13 @@ def merge_arcs(arc_registries, *, confirm: bool = True, confirmer=None) -> Entit
         for rec in arc.places.values():
             merged.add_place(Place(name=rec.canonical, description=rec.description))
         for rel in arc.relationships.values():
-            merged.add_relationship(Relationship(source=rel.source, target=rel.target,
-                                                 category=rel.category, detail=rel.detail,
-                                                 evidence=rel.evidence, confidence=rel.confidence))
+            merged.add_relationship(
+                Relationship(
+                    source=rel.source, target=rel.target, category=rel.category,
+                    detail=rel.detail, evidence=rel.evidence, confidence=rel.confidence,
+                ),
+                chapter_id=rel.chapter_id,
+            )
         merged.events.extend(dict(ev) for ev in arc.events)
     # Materialize characters referenced only by relationships so the merged
     # registry is the complete world (graph nodes) for downstream phases.

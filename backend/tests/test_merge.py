@@ -102,3 +102,41 @@ def test_known_entities_prompt_ranks_by_mention():
     prompt = reg.known_entities_prompt()
     assert "已知角色" in prompt
     assert prompt.index("主角") < prompt.index("配角")
+
+
+def test_add_relationship_records_chapter_id():
+    reg = EntityRegistry()
+    reg.add_relationship(
+        Relationship(source="贾宝玉", target="林黑玉", category=RelationCategory.LOVER, evidence="短证据", confidence=0.7),
+        chapter_id="ch0001",
+    )
+    rec = next(iter(reg.relationships.values()))
+    assert rec.chapter_id == "ch0001"
+
+
+def test_add_relationship_chapter_id_follows_longest_evidence():
+    reg = EntityRegistry()
+    reg.add_relationship(
+        Relationship(source="贾宝玉", target="林黑玉", category=RelationCategory.LOVER, evidence="短", confidence=0.5),
+        chapter_id="ch0001",
+    )
+    reg.add_relationship(
+        Relationship(source="贾宝玉", target="林黑玉", category=RelationCategory.LOVER, evidence="这是一段更长的原文证据摘录", confidence=0.6),
+        chapter_id="ch0002",
+    )
+    rec = next(iter(reg.relationships.values()))
+    assert rec.evidence == "这是一段更长的原文证据摘录"
+    assert rec.chapter_id == "ch0002"
+
+
+def test_add_extraction_threads_chapter_id_into_relationships():
+    ext = ChunkExtraction(
+        characters=[Character(name="贾宝玉"), Character(name="林黑玉")],
+        relationships=[
+            Relationship(source="贾宝玉", target="林黑玉", category=RelationCategory.LOVER, evidence="证据文本")
+        ],
+    )
+    reg = EntityRegistry()
+    reg.add_extraction(ext, chapter_id="ch0003")
+    rec = next(iter(reg.relationships.values()))
+    assert rec.chapter_id == "ch0003"

@@ -107,6 +107,15 @@ export default function TimelineTab({ id, setRight, onViewChapter }) {
                     >
                       {e.summary}
                     </button>
+                    {e.chapter_id && (
+                      <button
+                        type="button"
+                        onClick={() => onViewChapter?.(e.chapter_id, e.paragraph_index)}
+                        className="mt-1 text-xs text-ink-600 hover:text-seal-600 hover:underline"
+                      >
+                        查看原文 →
+                      </button>
+                    )}
                   </div>
                 );
               })}

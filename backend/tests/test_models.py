@@ -62,3 +62,28 @@ def test_event_chapter_coerces_int_to_str():
 def test_event_chapter_keeps_str():
     e = Event(summary="甲登场", chapter="ch0001")
     assert e.chapter == "ch0001"
+
+
+def test_event_has_optional_evidence_field():
+    from app.models import Event
+
+    e = Event(summary="收徒", chapter="ch0001", participants=["贾宝玉"])
+    assert e.evidence == ""
+    e2 = Event(summary="收徒", chapter="ch0001", evidence="贾宝玉收林黑玉为徒。")
+    assert e2.evidence == "贾宝玉收林黑玉为徒。"
+
+
+def test_timeline_event_has_optional_paragraph_index():
+    from app.models import TimelineEvent
+
+    t = TimelineEvent(seq=1, chapter_id="ch0001", chapter_title="第一章", summary="相遇")
+    assert t.paragraph_index is None
+    t2 = TimelineEvent(seq=1, chapter_id="ch0001", chapter_title="第一章", summary="相遇", paragraph_index=3)
+    assert t2.paragraph_index == 3
+
+
+def test_chapter_text_uses_paragraphs_list():
+    from app.models import ChapterText
+
+    c = ChapterText(chapter_id="ch0001", title="第一章", paragraphs=["第一段。", "第二段。"])
+    assert c.paragraphs == ["第一段。", "第二段。"]

@@ -70,6 +70,7 @@ class Event(BaseModel):
     order_hint: Optional[int] = Field(
         default=None, description="事件在全书中的粗略先后顺序，用于未来时间线"
     )
+    evidence: str = Field(default="", description="支持该事件的原文证据/摘录（若能提供）")
 
     @field_validator("chapter", mode="before")
     @classmethod
@@ -130,7 +131,7 @@ class ChapterText(BaseModel):
 
     chapter_id: str
     title: str = ""
-    text: str
+    paragraphs: list[str] = Field(default_factory=list)
 
 
 class ArcSummary(BaseModel):
@@ -171,6 +172,7 @@ class TimelineEvent(BaseModel):
     chapter_title: str
     summary: str
     participants: list[str] = Field(default_factory=list)
+    paragraph_index: Optional[int] = None
 
 
 class WorkPackage(BaseModel):

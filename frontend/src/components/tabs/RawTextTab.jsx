@@ -6,6 +6,8 @@ export default function RawTextTab({ id, ls, jump, setRight }) {
   const [chapterState, setChapterState] = useState({}); // chapterId -> { loading, paragraphs }
   const chapterRefs = useRef({});
   const lastHandledNonceRef = useRef(null);
+  const progressKey = `novel_kg_reader_progress_${id}`;
+  const restoredRef = useRef(null);
 
   const [fontSize, setFontSize] = useState(() => Number(localStorage.getItem("novel_kg_reader_font_size")) || 16);
   const [theme, setTheme] = useState(() => localStorage.getItem("novel_kg_reader_theme") || "day");
@@ -83,6 +85,55 @@ export default function RawTextTab({ id, ls, jump, setRight }) {
     }
     return () => observer.disconnect();
   }, [chapters, loadChapter]);
+
+  useEffect(() => {
+    const intersecting = new Map(); // element -> boundingClientRect, persists across callback batches
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            intersecting.set(entry.target, entry.boundingClientRect);
+          } else {
+            intersecting.delete(entry.target);
+          }
+        }
+        if (intersecting.size === 0) return;
+        let topEl = null;
+        let topRect = null;
+        for (const [el, rect] of intersecting) {
+          if (!topRect || rect.top < topRect.top) {
+            topEl = el;
+            topRect = rect;
+          }
+        }
+        const { chapter, para } = topEl.dataset;
+        if (chapter && para !== undefined) {
+          localStorage.setItem(progressKey, JSON.stringify({ chapterId: chapter, paragraphIndex: Number(para) }));
+        }
+      },
+      { threshold: 0.1 }
+    );
+    const paras = document.querySelectorAll("[data-chapter][data-para]");
+    for (const el of paras) observer.observe(el);
+    return () => observer.disconnect();
+  }, [chapterState, progressKey]);
+
+  useEffect(() => {
+    if (restoredRef.current === progressKey) return;
+    restoredRef.current = progressKey;
+    const saved = localStorage.getItem(progressKey);
+    if (!saved) return;
+    try {
+      const { chapterId, paragraphIndex } = JSON.parse(saved);
+      loadChapter(chapterId).then(() => {
+        setTimeout(() => {
+          document.getElementById(`p-${chapterId}-${paragraphIndex}`)?.scrollIntoView({ block: "start" });
+        }, 50);
+      });
+    } catch {
+      localStorage.removeItem(progressKey); // clear corrupted saved progress
+    }
+  }, [progressKey, loadChapter]);
 
   useEffect(() => {
     if (!jump || jump.nonce === lastHandledNonceRef.current) return;

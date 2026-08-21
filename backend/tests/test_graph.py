@@ -186,3 +186,15 @@ def test_heuristic_labels_names_community_after_most_mentioned_character():
 
 def test_heuristic_labels_empty_communities_returns_empty_dict():
     assert _heuristic_labels({}, nx.Graph(), {}, EntityRegistry()) == {}
+
+
+def test_edges_have_empty_source_location_placeholder():
+    reg = EntityRegistry()
+    reg.add_character(Character(name="贾宝玉"))
+    reg.add_character(Character(name="林黑玉"))
+    reg.add_relationship(Relationship(source="贾宝玉", target="林黑玉", category="爱人", confidence=0.7))
+    extraction, _name_to_id, _id_to_name = build_extraction_json(reg)
+    edges = extraction["edges"] if "edges" in extraction else extraction["links"]
+    assert edges, "expected at least one edge"
+    for edge in edges:
+        assert edge["source_location"] == ""

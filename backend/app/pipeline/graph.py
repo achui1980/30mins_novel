@@ -141,6 +141,7 @@ def build_extraction_json(registry: EntityRegistry) -> tuple[dict, dict, dict]:
                 "confidence_label": confidence_label(rec.confidence),
                 "directed": cat_enum in DIRECTED_CATEGORIES,
                 "weight": max(1, rec.count),
+                "source_location": "",
             }
         )
 

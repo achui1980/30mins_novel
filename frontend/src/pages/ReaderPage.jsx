@@ -53,6 +53,11 @@ export default function ReaderPage() {
     setTab("ask");
   }
 
+  function askAboutSelection(question) {
+    setAskSeed({ question, autoSubmit: false, nonce: Date.now() });
+    setTab("ask");
+  }
+
   function viewChapter(chapterId, paragraphIndex) {
     setRawJump({ chapterId, paragraphIndex, nonce: Date.now() });
     setTab("raw");
@@ -134,7 +139,13 @@ export default function ReaderPage() {
             )}
             {tab === "story" && <StoryTab id={id} setRight={setRight} />}
             {tab === "raw" && (
-              <RawTextTab id={id} ls={ls} jump={rawJump} setRight={setRight} />
+              <RawTextTab
+                id={id}
+                ls={ls}
+                jump={rawJump}
+                setRight={setRight}
+                onAskAboutSelection={askAboutSelection}
+              />
             )}
             {tab === "arcs" && <ArcsTab id={id} ls={ls} setRight={setRight} />}
             {tab === "timeline" && (

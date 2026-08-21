@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getChapterText, getGraph } from "../../api";
 
-export default function RawTextTab({ id, ls, jump, setRight }) {
+export default function RawTextTab({ id, ls, jump, setRight, onAskAboutSelection }) {
   const chapters = ls?.chapters || [];
   const [chapterState, setChapterState] = useState({}); // chapterId -> { loading, paragraphs }
   const chapterRefs = useRef({});
@@ -9,6 +9,7 @@ export default function RawTextTab({ id, ls, jump, setRight }) {
   const highlightTimeoutRef = useRef(null);
   const progressKey = `novel_kg_reader_progress_${id}`;
   const restoredRef = useRef(null);
+  const [selectionButton, setSelectionButton] = useState(null); // { text, chapterTitle, x, y }
 
   const [fontSize, setFontSize] = useState(() => Number(localStorage.getItem("novel_kg_reader_font_size")) || 16);
   const [theme, setTheme] = useState(() => localStorage.getItem("novel_kg_reader_theme") || "day");
@@ -219,6 +220,61 @@ export default function RawTextTab({ id, ls, jump, setRight }) {
     };
   }, [jump, loadChapter]);
 
+  useEffect(() => {
+    function handleMouseUp(event) {
+      const sel = window.getSelection();
+      const text = sel?.toString().trim();
+      // Suppress the ask-button only for a genuine click on an entity-link (no
+      // drag): a plain click collapses/clears any selection by the time mouseup
+      // fires, so `text` is empty here and EntityPopover's own onClick owns the
+      // UI for this interaction instead (a lingering text selection from before
+      // the click could otherwise leave both floating widgets on screen at
+      // once). A drag-selection that merely happens to end over an
+      // entity-highlighted span still produces a non-empty `text` and must
+      // still show the ask button — do not suppress it just because the
+      // release point is inside .entity-link.
+      if (!text) {
+        setSelectionButton(null);
+        return;
+      }
+      const anchorNode = sel.anchorNode;
+      // anchorNode can be a Text node (normal case) or an Element (e.g. selection
+      // anchored at a paragraph boundary via double/triple-click) — resolve both
+      // to the element that should carry data-chapter before walking up.
+      const anchorEl = anchorNode?.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : anchorNode;
+      const paraEl = anchorEl?.closest("[data-chapter]");
+      const chapterId = paraEl?.dataset.chapter;
+      const chapterTitle = chapters.find((c) => c.chapter === chapterId)?.title || chapterId || "";
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      setSelectionButton({ text, chapterTitle, x: rect.right, y: rect.bottom });
+    }
+    function handleSelectionChange() {
+      // Clears the button for any deselection path other than mouseup (e.g.
+      // programmatic removeAllRanges(), focus changes) so it never desyncs from
+      // the real DOM selection. mouseup remains the only path that *shows* the
+      // button, since it gives a clean final range once dragging has ended.
+      const text = window.getSelection()?.toString().trim();
+      if (!text) setSelectionButton(null);
+    }
+    function handleScroll() {
+      // The reader's actual scroll container is an ancestor <main
+      // className="overflow-y-auto">, not window — listen on the capture phase
+      // so scrolling that inner container is also caught. Dismiss rather than
+      // reposition, since the button would otherwise float detached from the
+      // (now-moved) selected text.
+      setSelectionButton(null);
+    }
+    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("selectionchange", handleSelectionChange);
+    document.addEventListener("scroll", handleScroll, true);
+    return () => {
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("selectionchange", handleSelectionChange);
+      document.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [chapters]);
+
   const themeClasses = theme === "night" ? "bg-ink-900 text-paper-50" : "bg-white text-ink-900";
 
   return (
@@ -265,6 +321,22 @@ export default function RawTextTab({ id, ls, jump, setRight }) {
           y={popover.y}
           onClose={() => setPopover(null)}
         />
+      )}
+      {selectionButton && (
+        <button
+          type="button"
+          className="fixed z-50 rounded bg-seal-600 px-2 py-1 text-xs text-white shadow"
+          style={{ left: selectionButton.x, top: selectionButton.y }}
+          onClick={() => {
+            const question = selectionButton.chapterTitle
+              ? `关于这段内容：「${selectionButton.text}」（出自${selectionButton.chapterTitle}），我想问：`
+              : `关于这段内容：「${selectionButton.text}」，我想问：`;
+            onAskAboutSelection?.(question);
+            setSelectionButton(null);
+          }}
+        >
+          就这段问AI
+        </button>
       )}
     </>
   );

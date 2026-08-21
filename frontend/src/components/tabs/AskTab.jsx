@@ -49,7 +49,11 @@ export default function AskTab({ id, seed, questions, onAsk, setRight }) {
   useEffect(() => {
     if (loaded && seed && seed.nonce !== lastHandledNonceRef.current) {
       lastHandledNonceRef.current = seed.nonce;
-      runAsk(seed.question);
+      if (seed.autoSubmit === false) {
+        setQ(seed.question);
+      } else {
+        runAsk(seed.question);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seed, loaded]);

@@ -69,19 +69,25 @@ export default function RawTextTab({ id, ls, jump, setRight, onAskAboutSelection
     });
   }
 
+  // Tracks in-flight/loaded chapter ids synchronously, independent of React's
+  // state batching. The IntersectionObserver below can call loadChapter for
+  // several chapters within a single callback batch; relying on a closure
+  // variable set inside setChapterState's updater is unsafe because React
+  // may defer running that updater until after this function has already
+  // returned, letting a later call read a stale value. A ref is always
+  // up to date the instant we write to it, so it can't race like that.
+  const chapterFetchRef = useRef({}); // chapterId -> true once fetch has started
+
   const loadChapter = useCallback(
     async (chapterId) => {
-      let shouldFetch = false;
-      setChapterState((prev) => {
-        if (prev[chapterId]?.loading || prev[chapterId]?.paragraphs) return prev;
-        shouldFetch = true;
-        return { ...prev, [chapterId]: { loading: true, paragraphs: null } };
-      });
-      if (!shouldFetch) return;
+      if (chapterFetchRef.current[chapterId]) return;
+      chapterFetchRef.current[chapterId] = true;
+      setChapterState((prev) => ({ ...prev, [chapterId]: { loading: true, paragraphs: null } }));
       try {
         const res = await getChapterText(id, chapterId);
         setChapterState((prev) => ({ ...prev, [chapterId]: { loading: false, paragraphs: res.paragraphs || [] } }));
       } catch (err) {
+        chapterFetchRef.current[chapterId] = false; // allow retry on failure
         setChapterState((prev) => ({ ...prev, [chapterId]: { loading: false, paragraphs: null, error: true } }));
       }
     },

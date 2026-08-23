@@ -17,7 +17,11 @@ from graphify.paths import write_json_atomic
 
 from .merge import EntityRegistry
 
-_PARA_SPLIT_RE = re.compile(r"\n\s*\n+")  # blank-line-delimited paragraphs
+# blank-line-delimited paragraphs; \s would also match U+3000 (full-width
+# space), and mobi extraction turns its empty spacer <p>　</p> into lone
+# U+3000 lines — treating those as blank lines merges the whole chapter into
+# giant wall-of-text blobs. Only plain [ \t] makes a blank line "blank".
+_PARA_SPLIT_RE = re.compile(r"\n[ \t]*\n+")
 FUZZY_MATCH_THRESHOLD = 0.6
 
 

@@ -29,6 +29,15 @@ def test_split_paragraphs_empty_text():
     assert split_paragraphs("   \n\n  ") == []
 
 
+def test_split_paragraphs_fullwidth_space_lines_do_not_merge():
+    # MOBI extraction flattens each <p> to a single '\n', and the book's empty
+    # spacer <p>\u3000</p> paragraphs become lone full-width-space lines. These
+    # must NOT be treated as blank-line paragraph separators, or the whole
+    # chapter collapses into a few giant wall-of-text blobs.
+    text = "第一段。\n第二段。\n\u3000\n第三段。\n第四段。"
+    assert split_paragraphs(text) == ["第一段。", "第二段。", "第三段。", "第四段。"]
+
+
 def test_locate_paragraph_exact_substring_match():
     paragraphs = ["贾宝玉在园中读书。", "林黑玉忽然到来，两人相谈甚欢。", "夜幕降临，众人散去。"]
     assert locate_paragraph(paragraphs, "林黑玉忽然到来") == 1

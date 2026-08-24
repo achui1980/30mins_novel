@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>30分钟读懂一本书 — Dashboard Mockup</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper-50: #FAF6EE;
+    --paper-100: #F3ECDD;
+    --ink-900: #2B2724;
+    --ink-600: #6B6259;
+    --ink-300: #D9D2C4;
+    --seal-100: #F5DEDA;
+    --seal-600: #B33A3A;
+    --seal-700: #8F2C2C;
+    --pine-100: #DCE6E1;
+    --pine-600: #3F5B4E;
+    --amber-600: #C9A15B;
+    --danger-600: #C0392B;
+    --radius-card: 12px;
+    --radius-btn: 8px;
+    --shadow-sm: 0 1px 2px rgba(43,39,36,.04);
+    --shadow-pop: 0 8px 24px rgba(43,39,36,.08);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper-50);
+    color: var(--ink-900);
+    font-family: "Noto Sans SC", "Inter", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, .serif { font-family: "Noto Serif SC", Georgia, serif; }
+
+  /* ---------- top bar (no tab bar, per design decision) ---------- */
+  .topbar-wrap {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(250,246,238,.92);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--ink-300);
+  }
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px 10px;
+  }
+  .topbar .book-title { font-size: 15px; font-weight: 700; color: var(--ink-900); }
+  .topbar .badge { font-size: 11px; color: var(--ink-600); margin-left: 8px; }
+  .icon-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--paper-100); border: 1px solid var(--ink-300);
+    cursor: pointer; font-size: 17px; color: var(--ink-600);
+    transition: transform .15s ease;
+  }
+  .icon-btn:hover { transform: scale(1.06); color: var(--ink-900); }
+
+  /* ---------- sticky anchor nav (v2: cross-section quick-jump, not a tab bar) ---------- */
+  .anchor-nav {
+    display: flex; gap: 6px; padding: 0 20px 10px; overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .anchor-nav::-webkit-scrollbar { display: none; }
+  .anchor-pill {
+    font-size: 12px; padding: 5px 12px; border-radius: 999px;
+    border: 1px solid var(--ink-300); background: var(--paper-100);
+    color: var(--ink-600); white-space: nowrap; cursor: pointer;
+    text-decoration: none; transition: all .15s ease; flex-shrink: 0;
+  }
+  .anchor-pill.active { background: var(--ink-900); color: #fff; border-color: var(--ink-900); }
+
+  /* ---------- dashboard scroll container ---------- */
+  .dashboard { max-width: 720px; margin: 0 auto; padding: 28px 20px 140px; }
+  .section { margin-bottom: 40px; }
+  .section-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .section-head h2 { font-size: 19px; margin: 0; }
+  .expand-link {
+    font-size: 13px; color: var(--seal-600); cursor: pointer;
+    white-space: nowrap; text-decoration: none;
+  }
+  .expand-link:hover { text-decoration: underline; }
+  .sub-link { font-size: 12.5px; color: var(--pine-600); cursor: pointer; margin-top: 10px; display: inline-block; }
+  .sub-link:hover { text-decoration: underline; }
+
+  .card {
+    background: #fff; border: 1px solid var(--ink-300);
+    border-radius: var(--radius-card); box-shadow: var(--shadow-sm);
+    padding: 18px 20px;
+  }
+
+  /* ---------- 1. Hero ---------- */
+  .hero { padding: 8px 0 4px; }
+  .hero .kicker { font-size: 12.5px; color: var(--ink-600); letter-spacing: .04em; }
+  .hero h1 { font-size: 30px; margin: 6px 0 10px; }
+  .hero .one-liner { font-size: 16px; font-weight: 500; color: var(--ink-900); margin-bottom: 6px; }
+  .hero .hook { font-size: 14px; color: var(--ink-600); line-height: 1.7; margin-bottom: 14px; }
+  /* v2: reading-time / progress metadata — reinforces the "30-minute" value prop */
+  .hero .meta-row {
+    display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-600);
+    margin-bottom: 16px; padding: 10px 14px; background: var(--paper-100);
+    border-radius: var(--radius-btn); border: 1px solid var(--ink-300);
+  }
+  .hero .meta-row span { display: flex; align-items: center; gap: 5px; }
+  .hero .meta-row b { color: var(--ink-900); font-weight: 700; }
+  /* v2: CTA demoted to a quiet ghost link inside Hero — the big CTA now lives
+     at the bottom of the Dashboard (see .cta-bottom), so the panorama isn't
+     skippable-by-default. This link still exists for users who truly want
+     to jump straight to reading. */
+  .ghost-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--ink-600); background: none; border: none;
+    cursor: pointer; padding: 0; text-decoration: underline dotted;
+  }
+  .ghost-link:hover { color: var(--seal-600); }
+  .cta-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--seal-600); color: #fff; border: none;
+    padding: 13px 26px; border-radius: var(--radius-btn);
+    font-size: 15px; font-weight: 700; cursor: pointer;
+    box-shadow: var(--shadow-pop);
+    transition: background .15s ease;
+  }
+  .cta-btn:hover { background: var(--seal-700); }
+  /* v2: prominent CTA moved to the end of the panorama, after all 7 sections */
+  .cta-bottom {
+    text-align: center; padding: 32px 20px 8px; border-top: 1px dashed var(--ink-300);
+    margin-top: 8px;
+  }
+  .cta-bottom .lead { font-size: 14px; color: var(--ink-600); margin-bottom: 14px; }
+  .cta-bottom .cta-btn { font-size: 16px; padding: 15px 30px; }
+
+  /* ---------- 2. Overview ---------- */
+  .overview-text { font-size: 14.5px; line-height: 1.85; color: var(--ink-900); }
+
+  /* ---------- 3. Suggested questions ---------- */
+  .q-list { display: flex; flex-direction: column; gap: 8px; }
+  .q-btn {
+    text-align: left; background: var(--paper-100); border: 1px solid var(--ink-300);
+    border-radius: var(--radius-btn); padding: 11px 14px; font-size: 13.5px;
+    color: var(--ink-900); cursor: pointer; transition: border-color .15s;
+  }
+  .q-btn:hover { border-color: var(--seal-600); }
+  .q-btn .rationale { display: block; font-size: 11.5px; color: var(--ink-600); margin-top: 3px; }
+
+  /* ---------- 4. Characters + graph preview ---------- */
+  .char-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .char-card { border-radius: var(--radius-card); border: 1px solid var(--ink-300); background: #fff; padding: 12px 14px; }
+  .char-card .name { font-weight: 700; font-size: 14px; }
+  .char-card .role { font-size: 11.5px; color: var(--seal-600); margin: 2px 0 4px; }
+  .char-card .desc { font-size: 12px; color: var(--ink-600); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .graph-preview {
+    height: 140px; border-radius: var(--radius-card); border: 1px dashed var(--ink-300);
+    background: var(--paper-100);
+    display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;
+  }
+  .graph-preview .node { position: absolute; width: 34px; height: 34px; border-radius: 50%; background: var(--pine-600); opacity: .85; }
+  .graph-preview .node.a { top: 30%; left: 20%; background: var(--seal-600); }
+  .graph-preview .node.b { top: 55%; left: 45%; }
+  .graph-preview .node.c { top: 25%; left: 68%; background: var(--amber-600); }
+  .graph-preview .node.d { top: 68%; left: 75%; }
+  .graph-preview .hint { font-size: 12px; color: var(--ink-600); z-index: 2; background: rgba(250,246,238,.85); padding: 3px 10px; border-radius: 12px; }
+
+  /* ---------- 5. Arcs ---------- */
+  .arc-card + .arc-card { margin-top: 10px; }
+  .arc-card .title { font-weight: 700; font-size: 14.5px; margin-bottom: 4px; }
+  .arc-card .summary { font-size: 13px; color: var(--ink-600); line-height: 1.6; margin-bottom: 6px; }
+  .arc-card .members { font-size: 11.5px; color: var(--pine-600); }
+
+  /* ---------- 6. Timeline ---------- */
+  .mini-timeline { position: relative; padding-left: 20px; }
+  .mini-timeline::before { content: ""; position: absolute; left: 5px; top: 4px; bottom: 4px; width: 2px; background: var(--ink-300); }
+  .tl-event { position: relative; padding-bottom: 16px; }
+  .tl-event::before { content: ""; position: absolute; left: -20px; top: 3px; width: 10px; height: 10px; border-radius: 50%; background: var(--seal-600); border: 2px solid var(--paper-50); }
+  .tl-event .ch { font-size: 11.5px; color: var(--ink-600); }
+  .tl-event .summary { font-size: 13.5px; margin-top: 2px; }
+
+  /* ---------- 7. Setting cards ---------- */
+  .setting-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .setting-card { border-radius: var(--radius-card); border: 1px solid var(--ink-300); background: #fff; padding: 12px 14px; }
+  .setting-card .title { font-weight: 700; font-size: 13.5px; margin-bottom: 4px; color: var(--pine-600); }
+  .setting-card .content { font-size: 12.5px; color: var(--ink-600); line-height: 1.6; }
+
+  /* ---------- floating Ask-AI ---------- */
+  .ask-fab {
+    position: fixed; right: 22px; bottom: 22px; z-index: 30;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--ink-900); color: var(--paper-50);
+    padding: 13px 18px; border-radius: 999px;
+    box-shadow: var(--shadow-pop); cursor: pointer; font-size: 14px; font-weight: 700;
+    border: none;
+  }
+  .ask-panel {
+    position: fixed; right: 22px; bottom: 84px; z-index: 30;
+    width: 300px; background: #fff; border: 1px solid var(--ink-300);
+    border-radius: var(--radius-card); box-shadow: var(--shadow-pop);
+    padding: 14px; display: none;
+  }
+  .ask-panel.open { display: block; }
+  .ask-panel textarea {
+    width: 100%; height: 60px; resize: none; border: 1px solid var(--ink-300);
+    border-radius: var(--radius-btn); padding: 8px; font-size: 13px; font-family: inherit;
+  }
+  .ask-panel .send-btn {
+    margin-top: 8px; width: 100%; background: var(--seal-600); color: #fff; border: none;
+    padding: 9px; border-radius: var(--radius-btn); font-size: 13px; font-weight: 700; cursor: pointer;
+  }
+
+  /* ---------- settings overlay ---------- */
+  .settings-overlay {
+    position: fixed; inset: 0; background: rgba(43,39,36,.35); z-index: 40;
+    display: none; align-items: flex-start; justify-content: flex-end;
+  }
+  .settings-overlay.open { display: flex; }
+  .settings-panel {
+    width: 280px; margin: 60px 20px 0 0; background: #fff;
+    border-radius: var(--radius-card); box-shadow: var(--shadow-pop); padding: 18px;
+  }
+  .settings-panel h3 { font-size: 15px; margin: 0 0 14px; }
+  .settings-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13px; }
+  .seg-btn-group { display: flex; border: 1px solid var(--ink-300); border-radius: var(--radius-btn); overflow: hidden; }
+  .seg-btn-group button { border: none; background: var(--paper-100); padding: 6px 10px; font-size: 12px; cursor: pointer; }
+  .seg-btn-group button.active { background: var(--seal-600); color: #fff; }
+  .close-panel { margin-top: 6px; font-size: 12px; color: var(--ink-600); cursor: pointer; text-align: right; }
+
+  /* ---------- stack sub-pages ---------- */
+  .stack-page {
+    position: fixed; inset: 0; background: var(--paper-50); z-index: 50;
+    display: none; flex-direction: column;
+  }
+  .stack-page.open { display: flex; }
+  .stack-header {
+    display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+    border-bottom: 1px solid var(--ink-300); background: rgba(250,246,238,.95);
+  }
+  .back-btn {
+    font-size: 14px; color: var(--ink-900); cursor: pointer; display: flex; align-items: center; gap: 4px;
+    background: none; border: none; font-weight: 700;
+  }
+  .stack-header .stack-title { font-size: 15px; font-weight: 700; }
+  .stack-body { flex: 1; overflow-y: auto; padding: 22px; }
+  .stack-body-inner { max-width: 720px; margin: 0 auto; }
+
+  /* v2: graph/arcs/timeline sub-pages keep AppShell's existing right-sidebar
+     detail pattern (per locked design decision) — rendered here as a real
+     two-column layout instead of a full-bleed page, to make that decision
+     visually concrete and distinct from the fully-immersive reader below. */
+  .stack-with-rail { display: flex; gap: 24px; align-items: flex-start; max-width: 960px; margin: 0 auto; }
+  .stack-with-rail .stack-main { flex: 1; min-width: 0; }
+  .stack-with-rail .stack-rail {
+    width: 200px; flex-shrink: 0; border-left: 1px solid var(--ink-300);
+    padding-left: 16px; font-size: 12.5px; color: var(--ink-600); line-height: 1.6;
+  }
+  .stack-rail h4 { font-size: 12.5px; margin: 0 0 8px; color: var(--ink-900); }
+  .stack-rail .toc-item { padding: 6px 0; border-bottom: 1px solid var(--paper-100); cursor: pointer; }
+  .stack-rail .toc-item.current { color: var(--seal-600); font-weight: 700; }
+  .rail-tag {
+    display: inline-block; font-size: 10.5px; color: var(--pine-600); background: var(--pine-100);
+    padding: 2px 7px; border-radius: 999px; margin-bottom: 8px;
+  }
+
+  /* v2: 原文 reader is truly full-bleed/immersive — no right rail, no
+     bookshelf, distinguishable from the panels above by the tag below. */
+  .immersive-tag {
+    display: inline-block; font-size: 10.5px; color: var(--seal-600); background: var(--seal-100);
+    padding: 2px 7px; border-radius: 999px; margin-bottom: 8px;
+  }
+  .reader-progress {
+    display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-600);
+    margin-bottom: 14px;
+  }
+  .reader-progress .bar { flex: 1; height: 4px; border-radius: 2px; background: var(--ink-300); overflow: hidden; }
+  .reader-progress .bar > i { display: block; height: 100%; width: 7%; background: var(--seal-600); }
+
+  .placeholder-canvas {
+    height: 420px; border-radius: var(--radius-card); border: 1px dashed var(--ink-300);
+    background: var(--paper-100); display: flex; align-items: center; justify-content: center;
+    color: var(--ink-600); font-size: 13px; position: relative; overflow: hidden;
+  }
+  .placeholder-canvas .node { position: absolute; width: 48px; height: 48px; border-radius: 50%; opacity: .85; }
+
+  .accordion-row { border: 1px solid var(--ink-300); border-radius: var(--radius-card); background: #fff; margin-bottom: 8px; overflow: hidden; }
+  .accordion-row summary { padding: 12px 16px; cursor: pointer; font-size: 14px; font-weight: 500; list-style: none; display: flex; justify-content: space-between; }
+  .accordion-row summary::-webkit-details-marker { display: none; }
+  .accordion-row summary::after { content: "▾"; color: var(--ink-600); }
+  .accordion-row[open] summary::after { content: "▴"; }
+  .accordion-row .body { padding: 0 16px 14px; font-size: 13px; color: var(--ink-600); line-height: 1.7; }
+
+  .reader-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; }
+  .reader-toolbar button {
+    border: 1px solid var(--ink-300); background: #fff; border-radius: var(--radius-btn);
+    padding: 6px 10px; font-size: 13px; cursor: pointer;
+  }
+  .reader-chapter h3 { font-size: 17px; margin-bottom: 10px; }
+  .reader-chapter p { font-size: 15px; line-height: 2; margin-bottom: 14px; color: var(--ink-900); }
+  .entity-link { color: var(--seal-600); border-bottom: 1px dotted var(--seal-600); cursor: pointer; }
+
+  .note {
+    font-size: 11.5px; color: var(--ink-600); background: var(--pine-100);
+    border-radius: var(--radius-btn); padding: 8px 12px; margin: 0 0 20px;
+  }
+</style>
+</head>
+<body>
+
+  <div class="topbar-wrap">
+    <div class="topbar">
+      <div><span class="book-title">白夜行</span><span class="badge">Dashboard · 全景视图</span></div>
+      <div style="display:flex; gap:8px;">
+        <div class="icon-btn" id="settingsBtn" title="设置">⚙</div>
+      </div>
+    </div>
+    <div class="anchor-nav" id="anchorNav">
+      <a class="anchor-pill active" data-target="sec-hero" onclick="jumpTo(event,'sec-hero')">简介</a>
+      <a class="anchor-pill" data-target="sec-characters" onclick="jumpTo(event,'sec-characters')">人物</a>
+      <a class="anchor-pill" data-target="sec-arcs" onclick="jumpTo(event,'sec-arcs')">情节</a>
+      <a class="anchor-pill" data-target="sec-timeline" onclick="jumpTo(event,'sec-timeline')">时间</a>
+      <a class="anchor-pill" data-target="sec-settings" onclick="jumpTo(event,'sec-settings')">设定</a>
+    </div>
+  </div>
+
+  <div class="dashboard">
+    <div class="note">v2 迭代：CTA 从首屏移到全景末尾（避免用户一进来就跳过全景）；新增吸顶区块导航条，弥补堆栈导航跨区块跳转变慢的问题；「原文」页做成真正全屏沉浸，图谱/情节/时间轴页保留 AppShell 右侧详情栏（两种模式在下方用标签区分）；Hero 增补了章节数/字数/预计阅读时长与阅读进度。点击「查看完整→」体验堆栈式跳转。</div>
+
+    <!-- 1. Hero -->
+    <div class="section hero" id="sec-hero">
+      <div class="kicker">30分钟读懂一本书</div>
+      <h1>白夜行</h1>
+      <div class="one-liner">一场跨越19年、没有阳光却炽热到令人窒息的守护与复仇。</div>
+      <div class="hook">1973年，大阪一处废弃大楼发现一具男尸。案件表面终结，却在两个孩子此后近二十年的命运中留下阴影——他们如同两条永不相交、却又彼此牵绊的平行线，一个隐入黑暗，一个走向光明。</div>
+      <div class="meta-row">
+        <span>📖 <b>14</b> 章</span>
+        <span>✍️ 约 <b>32万</b> 字</span>
+        <span>⏱ 全景阅读约 <b>12分钟</b></span>
+        <span>🔖 原文已读 <b>7%</b>（第一章）</span>
+      </div>
+      <button class="ghost-link" onclick="openStack('raw')">不看全景，直接读原文 →</button>
+    </div>
+
+    <!-- 2. Overview -->
+    <div class="section">
+      <div class="section-head"><h2>内容简介</h2></div>
+      <div class="card overview-text">
+        本书讲述了亮司与雪穗两个在同一起杀人案中失去至亲的孩子，此后近二十年间各自选择的生存方式。东野圭吾以极简的正面叙事与大量留白，让读者只能通过外围人物的视角，逐步拼凑出两人之间从未言明、却贯穿一生的共生关系。全书没有一句阳光下的对话，却处处是彼此的影子。
+      </div>
+    </div>
+
+    <!-- 3. Suggested questions -->
+    <div class="section">
+      <div class="section-head"><h2>你可能想问</h2></div>
+      <div class="q-list">
+        <div class="q-btn" onclick="askQuestion(this)">雪穗和亮司之间真正的关系是什么？<span class="rationale">全书核心悬念，多条支线共同指向这一问题</span></div>
+        <div class="q-btn" onclick="askQuestion(this)">书名「白夜行」有什么隐喻？<span class="rationale">关联主题：没有太阳、只能在黑夜里行走</span></div>
+        <div class="q-btn" onclick="askQuestion(this)">笹垣润三这个角色的作用是什么？<span class="rationale">贯穿全书的追查者视角</span></div>
+      </div>
+    </div>
+
+    <!-- 4. Characters + Graph -->
+    <div class="section" id="sec-characters">
+      <div class="section-head"><h2>人物关系</h2><a class="expand-link" onclick="openStack('graph')">查看完整图谱→</a></div>
+      <div class="char-grid">
+        <div class="char-card"><div class="name">唐泽雪穗</div><div class="role">核心人物</div><div class="desc">表面优雅从容，实则城府极深，命运的另一半推手。</div></div>
+        <div class="char-card"><div class="name">桐原亮司</div><div class="role">核心人物</div><div class="desc">隐入黑暗、终生守护雪穗，从不現身于阳光之下。</div></div>
+        <div class="char-card"><div class="name">笹垣润三</div><div class="role">追查者</div><div class="desc">退休刑警，二十年不放弃追查案件真相。</div></div>
+        <div class="char-card"><div class="name">川岛江利子</div><div class="role">旁观者</div><div class="desc">雪穗的朋友，逐渐察觉她身边异常的死亡事件。</div></div>
+      </div>
+      <div class="graph-preview">
+        <div class="node a"></div><div class="node b"></div><div class="node c"></div><div class="node d"></div>
+        <div class="hint">图谱预览（点击"查看完整图谱"进入交互式关系网络）</div>
+      </div>
+    </div>
+
+    <!-- 5. Arcs -->
+    <div class="section" id="sec-arcs">
+      <div class="section-head"><h2>情节脉络</h2><a class="expand-link" onclick="openStack('arcs')">查看完整→</a></div>
+      <div class="arc-card card">
+        <div class="title">1973：案件的起点</div>
+        <div class="summary">废弃大楼中的杀人案发生，两个家庭从此走向不同的命运轨迹。</div>
+        <div class="members">涉及人物：桐原亮司、唐泽雪穗、笹垣润三</div>
+      </div>
+      <div class="arc-card card">
+        <div class="title">1980s：暗中的守护</div>
+        <div class="summary">雪穗身边接连发生离奇死亡事件，每一次都恰好为她"清除"了障碍。</div>
+        <div class="members">涉及人物：唐泽雪穗、川岛江利子</div>
+      </div>
+      <a class="sub-link" onclick="openStack('story')">查看逐幕剧情正片 →</a>
+    </div>
+
+    <!-- 6. Timeline -->
+    <div class="section" id="sec-timeline">
+      <div class="section-head"><h2>时间轴</h2><a class="expand-link" onclick="openStack('timeline')">查看完整→</a></div>
+      <div class="card">
+        <div class="mini-timeline">
+          <div class="tl-event"><div class="ch">第一章</div><div class="summary">大楼杀人案发生，笹垣接手调查。</div></div>
+          <div class="tl-event"><div class="ch">第三章</div><div class="summary">雪穗转学，展现出与年龄不符的成熟。</div></div>
+          <div class="tl-event"><div class="ch">第七章</div><div class="summary">江利子首次察觉身边的异常死亡。</div></div>
+          <div class="tl-event"><div class="ch">第十二章</div><div class="summary">笹垣重新联系上当年案件的相关人物。</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. Setting cards -->
+    <div class="section" id="sec-settings">
+      <div class="section-head"><h2>世界观设定</h2></div>
+      <div class="setting-grid">
+        <div class="setting-card"><div class="title">时代背景</div><div class="content">1970s-1990s 日本大阪，经济高速发展与社会阴影并存的年代。</div></div>
+        <div class="setting-card"><div class="title">案件线索</div><div class="content">典当行钥匙、录像带盗版、电脑游戏产业，均是串联案件的关键道具。</div></div>
+        <div class="setting-card"><div class="title">叙事手法</div><div class="content">全书无一处雪穗与亮司的正面对话，全靠外围人物视角拼接真相。</div></div>
+      </div>
+    </div>
+
+    <!-- v2: bottom CTA — reading is opt-in, offered again after the full panorama -->
+    <div class="cta-bottom">
+      <div style="margin-bottom:10px;color:var(--ink-600);font-size:14px;">全景看完了？带着这些人物和线索，去读原文会更有感觉。</div>
+      <button class="cta-btn" onclick="openStack('raw')">开始阅读原文 →</button>
+    </div>
+  </div>
+
+  <!-- floating Ask-AI -->
+  <button class="ask-fab" id="askFab" onclick="toggleAsk()">💬 问AI</button>
+  <div class="ask-panel" id="askPanel">
+    <textarea id="askInput" placeholder="就这本书问点什么…"></textarea>
+    <button class="send-btn">发送</button>
+  </div>
+
+  <!-- settings overlay -->
+  <div class="settings-overlay" id="settingsOverlay">
+    <div class="settings-panel">
+      <h3>阅读设置</h3>
+      <div class="settings-row">
+        <span>字号</span>
+        <div class="seg-btn-group">
+          <button>A-</button><button class="active">中</button><button>A+</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <span>主题</span>
+        <div class="seg-btn-group">
+          <button class="active">日间</button><button>夜间</button>
+        </div>
+      </div>
+      <div class="close-panel" onclick="toggleSettings()">关闭</div>
+    </div>
+  </div>
+
+  <!-- ============ STACK SUB-PAGES ============ -->
+
+  <!-- 原文 (raw text reader) -->
+  <div class="stack-page" id="stack-raw">
+    <div class="stack-header">
+      <button class="back-btn" onclick="closeStack()">← 返回</button>
+      <div class="stack-title">原文 · 白夜行</div>
+    </div>
+    <div class="stack-body">
+      <div class="stack-body-inner">
+        <div class="immersive-tag">沉浸阅读 · 无侧栏</div>
+        <div class="reader-progress">
+          <span>阅读进度：第一章 / 共14章</span>
+          <i style="width:7%"></i>
+        </div>
+        <div class="reader-toolbar">
+          <button>A-</button><button>A+</button><button>🌙 夜间</button>
+        </div>
+        <div class="reader-chapter">
+          <h3>第一章</h3>
+          <p>1973年12月，一栋废弃的建筑物内，一名男子的尸体被人发现。发现者是<span class="entity-link">笹垣润三</span>——辖区里一名即将退休的刑警。</p>
+          <p>案件表面上并不复杂，然而随着调查深入，<span class="entity-link">桐原亮司</span>与<span class="entity-link">唐泽雪穗</span>两个孩子的命运，从这一天开始被悄然改写……</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 完整图谱 -->
+  <div class="stack-page" id="stack-graph">
+    <div class="stack-header">
+      <button class="back-btn" onclick="closeStack()">← 返回</button>
+      <div class="stack-title">完整人物关系图谱</div>
+    </div>
+    <div class="stack-body">
+      <div class="stack-with-rail">
+        <div class="stack-main">
+          <div class="placeholder-canvas">
+            <div class="node" style="top:20%;left:15%;background:var(--seal-600);"></div>
+            <div class="node" style="top:60%;left:25%;background:var(--pine-600);"></div>
+            <div class="node" style="top:30%;left:55%;background:var(--amber-600);"></div>
+            <div class="node" style="top:70%;left:65%;background:var(--pine-600);"></div>
+            <div class="node" style="top:15%;left:80%;background:var(--seal-600);"></div>
+            交互式 vis-network 画布（完整版 —— 沿用现有 GraphTab 组件）
+          </div>
+        </div>
+        <div class="stack-rail">
+          <div class="rail-tag">保留 AppShell 右侧栏</div>
+          点击节点或边后，此处显示详情：角色描述、关系分类、置信度与"查看原文"证据链接。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 完整情节脉络 -->
+  <div class="stack-page" id="stack-arcs">
+    <div class="stack-header">
+      <button class="back-btn" onclick="closeStack()">← 返回</button>
+      <div class="stack-title">完整情节脉络 · 章节摘要</div>
+    </div>
+    <div class="stack-body">
+      <div class="stack-with-rail">
+        <div class="stack-main">
+          <details class="accordion-row" open>
+            <summary>第一章</summary>
+            <div class="body">废弃大楼杀人案发生，笹垣润三接手调查，案件表面终结但疑点丛生。</div>
+          </details>
+          <details class="accordion-row">
+            <summary>第二章</summary>
+            <div class="body">雪穗随养母转学至新城市，展现出超乎年龄的沉稳与心思。</div>
+          </details>
+          <details class="accordion-row">
+            <summary>第三章</summary>
+            <div class="body">亮司在阴影中生活，靠典当行与电脑维修维生，鲜少与人深交。</div>
+          </details>
+        </div>
+        <div class="stack-rail">
+          <div class="rail-tag">保留 AppShell 右侧栏</div>
+          <div style="margin-bottom:8px;font-weight:600;">章节目录</div>
+          第一章<br>第二章<br>第三章<br>……
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 剧情正片 (story beats) -->
+  <div class="stack-page" id="stack-story">
+    <div class="stack-header">
+      <button class="back-btn" onclick="closeStack()">← 返回</button>
+      <div class="stack-title">剧情正片 · 逐幕叙事</div>
+    </div>
+    <div class="stack-body">
+      <div class="stack-body-inner">
+        <div class="card" style="margin-bottom:14px;">
+          <strong>主线：</strong>两条平行线在黑暗中彼此守护、彼此摧毁的十九年。&nbsp;<strong>基调：</strong>压抑、悲凉、克制。
+        </div>
+        <details class="accordion-row" open>
+          <summary>第1幕：黑暗的开端</summary>
+          <div class="body">（生成的正片文本，示例）废弃大楼里弥漫着尘土与霉味的气息，笹垣的手电光划破黑暗，照见了那具早已冰冷的躯体……</div>
+        </details>
+        <details class="accordion-row">
+          <summary>第2幕：转学的少女</summary>
+          <div class="body">（生成的正片文本，示例）新教室的门被推开，所有目光都聚焦在那个安静走进来的女孩身上，没有人能想象她心底藏着怎样的重量……</div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <!-- 完整时间轴 -->
+  <div class="stack-page" id="stack-timeline">
+    <div class="stack-header">
+      <button class="back-btn" onclick="closeStack()">← 返回</button>
+      <div class="stack-title">完整时间轴</div>
+    </div>
+    <div class="stack-body">
+      <div class="stack-with-rail">
+        <div class="stack-main">
+          <div class="mini-timeline">
+            <div class="tl-event"><div class="ch">第一章 · 事件1</div><div class="summary">大楼杀人案发生，笹垣接手调查。 <a class="expand-link" onclick="openStack('raw')">查看原文→</a></div></div>
+            <div class="tl-event"><div class="ch">第三章 · 事件2</div><div class="summary">雪穗转学，展现出与年龄不符的成熟。 <a class="expand-link" onclick="openStack('raw')">查看原文→</a></div></div>
+            <div class="tl-event"><div class="ch">第七章 · 事件3</div><div class="summary">江利子首次察觉身边的异常死亡。 <a class="expand-link" onclick="openStack('raw')">查看原文→</a></div></div>
+            <div class="tl-event"><div class="ch">第十二章 · 事件4</div><div class="summary">笹垣重新联系上当年案件的相关人物。 <a class="expand-link" onclick="openStack('raw')">查看原文→</a></div></div>
+            <div class="tl-event"><div class="ch">第十八章 · 事件5</div><div class="summary">尘封已久的线索开始浮出水面。 <a class="expand-link" onclick="openStack('raw')">查看原文→</a></div></div>
+          </div>
+        </div>
+        <div class="stack-rail">
+          <div class="rail-tag">保留 AppShell 右侧栏</div>
+          选中事件后，此处显示：所属章节、完整摘要、涉及人物列表。
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  function openStack(name) {
+    document.getElementById('stack-' + name).classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeStack() {
+    document.querySelectorAll('.stack-page.open').forEach(el => el.classList.remove('open'));
+    document.body.style.overflow = '';
+  }
+  function toggleAsk() {
+    document.getElementById('askPanel').classList.toggle('open');
+  }
+  function toggleSettings() {
+    document.getElementById('settingsOverlay').classList.toggle('open');
+  }
+  document.getElementById('settingsBtn').addEventListener('click', toggleSettings);
+  function askQuestion(el) {
+    const text = el.childNodes[0].textContent.trim();
+    document.getElementById('askInput').value = text;
+    document.getElementById('askPanel').classList.add('open');
+  }
+
+  // v2: sticky anchor-nav quick jump (page-internal scroll, not a router tab bar)
+  function jumpTo(evt, targetId) {
+    evt.preventDefault();
+    const el = document.getElementById(targetId);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.querySelectorAll('.anchor-pill').forEach(p => p.classList.remove('active'));
+    evt.currentTarget.classList.add('active');
+  }
+  // scroll-spy: auto-highlight the anchor pill matching the section currently in view
+  (function () {
+    const sectionIds = ['sec-hero', 'sec-characters', 'sec-arcs', 'sec-timeline', 'sec-settings'];
+    const sections = sectionIds.map(id => document.getElementById(id)).filter(Boolean);
+    const pills = Array.from(document.querySelectorAll('.anchor-pill'));
+    const pillFor = id => pills.find(p => p.getAttribute('onclick')?.includes("'" + id + "'"));
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const pill = pillFor(entry.target.id);
+          if (pill) {
+            pills.forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+          }
+        }
+      });
+    }, { rootMargin: '-40% 0px -50% 0px' });
+    sections.forEach(s => observer.observe(s));
+  })();
+</script>
+</body>
+</html>
+

@@ -1,30 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getChapterText, getGraph } from "../../api";
+import { getReadingProgress, setReadingProgress } from "../../lib/readingProgress";
 
-export default function RawTextTab({ id, ls, jump, setRight, onAskAboutSelection }) {
+export default function RawTextTab({
+  id,
+  ls,
+  jump,
+  setRight,
+  onAskAboutSelection,
+  fontSize,
+  theme,
+  onStepFontSize,
+  onToggleTheme,
+}) {
   const chapters = ls?.chapters || [];
   const [chapterState, setChapterState] = useState({}); // chapterId -> { loading, paragraphs }
   const chapterRefs = useRef({});
   const lastHandledNonceRef = useRef(null);
   const highlightTimeoutRef = useRef(null);
-  const progressKey = `novel_kg_reader_progress_${id}`;
   const restoredRef = useRef(null);
   const [selectionButton, setSelectionButton] = useState(null); // { text, chapterTitle, x, y }
-
-  const [fontSize, setFontSize] = useState(() => Number(localStorage.getItem("novel_kg_reader_font_size")) || 16);
-  const [theme, setTheme] = useState(() => localStorage.getItem("novel_kg_reader_theme") || "day");
-
-  useEffect(() => { localStorage.setItem("novel_kg_reader_font_size", String(fontSize)); }, [fontSize]);
-  useEffect(() => { localStorage.setItem("novel_kg_reader_theme", theme); }, [theme]);
-
-  const FONT_SIZES = [14, 16, 18, 20, 22];
-  function stepFontSize(delta) {
-    setFontSize((cur) => {
-      const idx = FONT_SIZES.indexOf(cur);
-      const nextIdx = Math.min(FONT_SIZES.length - 1, Math.max(0, (idx === -1 ? 1 : idx) + delta));
-      return FONT_SIZES[nextIdx];
-    });
-  }
 
   const [graph, setGraph] = useState(null);
   const [popover, setPopover] = useState(null); // { nodeId, x, y }
@@ -159,7 +154,7 @@ export default function RawTextTab({ id, ls, jump, setRight, onAskAboutSelection
         }
         const { chapter, para } = topEl.dataset;
         if (chapter && para !== undefined) {
-          localStorage.setItem(progressKey, JSON.stringify({ chapterId: chapter, paragraphIndex: Number(para) }));
+          setReadingProgress(id, chapter, Number(para));
         }
       },
       { threshold: 0.1 }
@@ -167,28 +162,24 @@ export default function RawTextTab({ id, ls, jump, setRight, onAskAboutSelection
     const paras = document.querySelectorAll("[data-chapter][data-para]");
     for (const el of paras) observer.observe(el);
     return () => observer.disconnect();
-  }, [chapterState, progressKey]);
+  }, [chapterState, id]);
 
   useEffect(() => {
-    if (restoredRef.current === progressKey) return;
-    restoredRef.current = progressKey;
+    if (restoredRef.current === id) return;
+    restoredRef.current = id;
     // A cross-tab "查看原文→" jump targeting this mount takes priority over
     // restoring the saved reading position: it's a more specific, intentional
     // user action, and the jump effect below will own the scroll instead.
     if (jump && jump.nonce !== lastHandledNonceRef.current) return;
-    const saved = localStorage.getItem(progressKey);
+    const saved = getReadingProgress(id);
     if (!saved) return;
-    try {
-      const { chapterId, paragraphIndex } = JSON.parse(saved);
-      loadChapter(chapterId).then(() => {
-        setTimeout(() => {
-          document.getElementById(`p-${chapterId}-${paragraphIndex}`)?.scrollIntoView({ block: "start" });
-        }, 50);
-      });
-    } catch {
-      localStorage.removeItem(progressKey); // clear corrupted saved progress
-    }
-  }, [progressKey, loadChapter, jump]);
+    const { chapterId, paragraphIndex } = saved;
+    loadChapter(chapterId).then(() => {
+      setTimeout(() => {
+        document.getElementById(`p-${chapterId}-${paragraphIndex}`)?.scrollIntoView({ block: "start" });
+      }, 50);
+    });
+  }, [id, loadChapter, jump]);
 
   useEffect(() => {
     if (!jump || jump.nonce === lastHandledNonceRef.current) return;
@@ -291,9 +282,9 @@ export default function RawTextTab({ id, ls, jump, setRight, onAskAboutSelection
     <>
       <div className={`rounded-md p-4 ${themeClasses}`}>
         <div className="mb-4 flex items-center gap-3 text-sm">
-          <button type="button" onClick={() => stepFontSize(-1)} className="rounded border px-2 py-1">A-</button>
-          <button type="button" onClick={() => stepFontSize(1)} className="rounded border px-2 py-1">A+</button>
-          <button type="button" onClick={() => setTheme((t) => (t === "night" ? "day" : "night"))} className="rounded border px-2 py-1">
+          <button type="button" onClick={() => onStepFontSize(-1)} className="rounded border px-2 py-1">A-</button>
+          <button type="button" onClick={() => onStepFontSize(1)} className="rounded border px-2 py-1">A+</button>
+          <button type="button" onClick={onToggleTheme} className="rounded border px-2 py-1">
             {theme === "night" ? "☀️ 日间" : "🌙 夜间"}
           </button>
         </div>

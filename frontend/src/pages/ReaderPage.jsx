@@ -1,79 +1,71 @@
-import { useEffect, useState, lazy, Suspense } from "react";
-import { useParams, Link } from "react-router-dom";
-import { getWork, graphHtmlUrl } from "../api";
+import { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import { getWork } from "../api";
 import AppShell from "../components/AppShell";
-
-const OverviewTab = lazy(() => import("../components/tabs/OverviewTab"));
-const CharactersTab = lazy(() => import("../components/tabs/CharactersTab"));
-const StoryTab = lazy(() => import("../components/tabs/StoryTab"));
-const ArcsTab = lazy(() => import("../components/tabs/ArcsTab"));
-const RawTextTab = lazy(() => import("../components/tabs/RawTextTab"));
-const TimelineTab = lazy(() => import("../components/tabs/TimelineTab"));
-const GraphTab = lazy(() => import("../components/tabs/GraphTab"));
-const AskTab = lazy(() => import("../components/tabs/AskTab"));
-const SettingsTab = lazy(() => import("../components/tabs/SettingsTab"));
-
-const TABS = [
-  { key: "overview", label: "总览" },
-  { key: "characters", label: "人物" },
-  { key: "story", label: "故事正片" },
-  { key: "raw", label: "原文" },
-  { key: "arcs", label: "情节线" },
-  { key: "timeline", label: "时间轴" },
-  { key: "graph", label: "图谱" },
-  { key: "ask", label: "问答" },
-  { key: "settings", label: "设置" },
-];
+import AskAI from "../components/AskAI";
+import SettingsOverlay from "../components/SettingsOverlay";
+import Dashboard from "../components/dashboard/Dashboard";
+import RawTextStack from "../components/stacks/RawTextStack";
+import GraphStack from "../components/stacks/GraphStack";
+import ArcsStack from "../components/stacks/ArcsStack";
+import TimelineStack from "../components/stacks/TimelineStack";
+import StoryStack from "../components/stacks/StoryStack";
+import { useReaderPrefs } from "../hooks/useReaderPrefs";
+import { Settings } from "lucide-react";
 
 export default function ReaderPage() {
   const { id } = useParams();
   const [pkg, setPkg] = useState(null);
-  const [error, setError] = useState("");
-  const [tab, setTab] = useState("overview");
+  const [error, setError] = useState(null);
+
+  const [activeStack, setActiveStack] = useState(null); // null | raw | graph | arcs | timeline | story
+  const [stackParams, setStackParams] = useState(null);
+
+  const [askOpen, setAskOpen] = useState(false);
   const [askSeed, setAskSeed] = useState(null);
-  const [rawJump, setRawJump] = useState(null);
-  const [right, setRight] = useState(null);
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const prefs = useReaderPrefs();
 
   useEffect(() => {
     let cancelled = false;
     getWork(id)
-      .then((data) => {
-        if (!cancelled) setPkg(data);
+      .then((r) => {
+        if (!cancelled) setPkg(r);
       })
       .catch((e) => {
-        if (!cancelled) setError(e.message || String(e));
+        if (!cancelled) setError(e.message);
       });
     return () => {
       cancelled = true;
     };
   }, [id]);
 
+  function openStack(target, params) {
+    setStackParams(params || null);
+    setActiveStack(target);
+  }
+
+  function closeStack() {
+    setActiveStack(null);
+  }
+
   function askAbout(question) {
     setAskSeed({ question, nonce: Date.now() });
-    setTab("ask");
   }
 
   function askAboutSelection(question) {
     setAskSeed({ question, autoSubmit: false, nonce: Date.now() });
-    setTab("ask");
   }
 
   function viewChapter(chapterId, paragraphIndex) {
-    setRawJump({ chapterId, paragraphIndex, nonce: Date.now() });
-    setTab("raw");
+    openStack("raw", { chapterId, paragraphIndex, nonce: Date.now() });
   }
 
   if (error) {
     return (
       <AppShell activeWorkId={id} right={null}>
-        <div className="mx-auto max-w-3xl px-8 py-10">
-          <Link to="/" className="text-sm text-ink-600 hover:text-seal-600">
-            ← 返回首页
-          </Link>
-          <div className="mt-4 rounded-card border border-danger-600 bg-danger-600/10 px-4 py-3 text-sm text-danger-600">
-            加载失败：{error}
-          </div>
-        </div>
+        <div className="p-8 text-danger-600">{error}</div>
       </AppShell>
     );
   }
@@ -81,92 +73,44 @@ export default function ReaderPage() {
   if (!pkg) {
     return (
       <AppShell activeWorkId={id} right={null}>
-        <div className="flex h-full items-center justify-center">
-          <span className="spinner" />
-        </div>
+        <div className="p-8 text-ink-600">加载中…</div>
       </AppShell>
     );
   }
 
   const ls = pkg.layered_summary || {};
-  const questions = pkg.suggested_questions || [];
 
   return (
-    <AppShell activeWorkId={id} right={right}>
-      <div className="mx-auto max-w-4xl px-8 py-8">
-        <div className="flex items-start justify-between gap-4">
-          <h1 className="font-serif text-2xl text-ink-900">{pkg.title}</h1>
-          <a
-            href={graphHtmlUrl(id)}
-            target="_blank"
-            rel="noreferrer"
-            className="whitespace-nowrap rounded-btn border border-ink-300 px-3 py-1.5 text-sm text-ink-600 hover:border-seal-600 hover:text-seal-600"
-          >
-            完整图谱 ↗
-          </a>
-        </div>
+    <>
+      <AppShell activeWorkId={id} right={null}>
+        <Dashboard id={id} pkg={pkg} ls={ls} onAsk={askAbout} onOpenStack={openStack} />
+      </AppShell>
 
-        <div className="mt-6 flex gap-6 border-b border-ink-300">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={
-                "border-b-2 px-1 pb-3 text-sm transition-colors " +
-                (tab === t.key
-                  ? "border-seal-600 font-serif text-seal-600"
-                  : "border-transparent text-ink-600 hover:text-ink-900")
-              }
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+      {activeStack === "raw" && (
+        <RawTextStack
+          id={id}
+          ls={ls}
+          jump={stackParams}
+          onBack={closeStack}
+          onAskAboutSelection={askAboutSelection}
+          prefs={prefs}
+        />
+      )}
+      {activeStack === "graph" && <GraphStack id={id} onBack={closeStack} onViewChapter={viewChapter} />}
+      {activeStack === "arcs" && <ArcsStack id={id} ls={ls} onBack={closeStack} />}
+      {activeStack === "timeline" && <TimelineStack id={id} onBack={closeStack} onViewChapter={viewChapter} />}
+      {activeStack === "story" && <StoryStack id={id} onBack={closeStack} />}
 
-        <div className="mt-6">
-          <Suspense
-            fallback={
-              <div className="flex items-center justify-center py-16">
-                <span className="spinner" />
-              </div>
-            }
-          >
-            {tab === "overview" && (
-              <OverviewTab pkg={pkg} ls={ls} onAsk={askAbout} setRight={setRight} />
-            )}
-            {tab === "characters" && (
-              <CharactersTab id={id} pkg={pkg} setRight={setRight} onViewChapter={viewChapter} />
-            )}
-            {tab === "story" && <StoryTab id={id} setRight={setRight} />}
-            {tab === "raw" && (
-              <RawTextTab
-                id={id}
-                ls={ls}
-                jump={rawJump}
-                setRight={setRight}
-                onAskAboutSelection={askAboutSelection}
-              />
-            )}
-            {tab === "arcs" && <ArcsTab id={id} ls={ls} setRight={setRight} />}
-            {tab === "timeline" && (
-              <TimelineTab id={id} setRight={setRight} onViewChapter={viewChapter} />
-            )}
-            {tab === "graph" && <GraphTab id={id} setRight={setRight} onViewChapter={viewChapter} />}
-            {tab === "ask" && (
-              <AskTab
-                id={id}
-                seed={askSeed}
-                questions={questions}
-                onAsk={askAbout}
-                setRight={setRight}
-              />
-            )}
-            {tab === "settings" && (
-              <SettingsTab cards={pkg.setting_cards || []} setRight={setRight} />
-            )}
-          </Suspense>
-        </div>
-      </div>
-    </AppShell>
+      <AskAI id={id} open={askOpen} onOpenChange={setAskOpen} seed={askSeed} />
+      <SettingsOverlay open={settingsOpen} onClose={() => setSettingsOpen(false)} prefs={prefs} />
+      <button
+        type="button"
+        onClick={() => setSettingsOpen(true)}
+        aria-label="设置"
+        className="fixed top-4 right-4 z-50 rounded-full border border-ink-300 bg-white p-2 shadow-sm2 hover:border-seal-600"
+      >
+        <Settings size={18} strokeWidth={1.5} className="text-ink-600" />
+      </button>
+    </>
   );
 }

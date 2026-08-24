@@ -183,17 +183,34 @@ export default function RawTextTab({
 
   useEffect(() => {
     if (!jump || jump.nonce === lastHandledNonceRef.current) return;
-    lastHandledNonceRef.current = jump.nonce;
+    // Do NOT mark this nonce as handled here. In development,
+    // React.StrictMode double-invokes mount effects (mount -> cleanup ->
+    // mount again); the first invocation's cleanup sets `cancelled` before
+    // its async attemptScroll ever runs, but if we recorded the nonce as
+    // handled up front, the second (surviving) invocation would see the
+    // nonce already claimed and bail out immediately, silently dropping
+    // the scroll/highlight entirely. Instead, the nonce is recorded lazily
+    // inside attemptScroll, past the `cancelled` check, so only the
+    // invocation that actually gets to run claims it.
     let cancelled = false;
     const targetId = jump.paragraphIndex != null ? `p-${jump.chapterId}-${jump.paragraphIndex}` : null;
     const attemptScroll = (retriesLeft) => {
       if (cancelled) return;
       const el = targetId ? document.getElementById(targetId) : chapterRefs.current[jump.chapterId];
-      if (!el && targetId && retriesLeft > 0) {
+      if (!el && retriesLeft > 0) {
         setTimeout(() => attemptScroll(retriesLeft - 1), 100);
         return;
       }
-      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      lastHandledNonceRef.current = jump.nonce;
+      // Instant, not smooth: a smooth scroll animating past many chapters
+      // races the IntersectionObserver-driven lazy-loading of those same
+      // chapters (see loadChapter above) — each chapter that finishes
+      // loading while still off-target replaces a placeholder with real
+      // text and shifts the document's layout, which can interrupt/derail
+      // an in-flight smooth-scroll animation partway there. An instant
+      // jump is unaffected since it resolves to a position synchronously
+      // instead of animating through the intervening, still-loading content.
+      el?.scrollIntoView({ behavior: "instant", block: "start" });
       if (targetId && el) {
         if (highlightTimeoutRef.current) {
           clearTimeout(highlightTimeoutRef.current.timeoutId);

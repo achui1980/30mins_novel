@@ -8,7 +8,7 @@ import CharactersGraphPreviewSection from "./CharactersGraphPreviewSection";
 
 const noop = () => {};
 
-export default function Dashboard({ id, pkg, ls, onAsk, onOpenStack }) {
+export default function Dashboard({ id, pkg, ls, onAsk, onOpenStack, onViewChapter }) {
   const questions = pkg.suggested_questions || [];
 
   return (
@@ -30,7 +30,12 @@ export default function Dashboard({ id, pkg, ls, onAsk, onOpenStack }) {
         <SuggestedQuestions questions={questions} onAsk={onAsk} />
       </section>
 
-      <CharactersGraphPreviewSection id={id} pkg={pkg} onOpenGraph={() => onOpenStack("graph")} />
+      <CharactersGraphPreviewSection
+        id={id}
+        pkg={pkg}
+        onOpenGraph={() => onOpenStack("graph")}
+        onViewChapter={onViewChapter}
+      />
 
       <ArcsPreviewSection
         ls={ls}

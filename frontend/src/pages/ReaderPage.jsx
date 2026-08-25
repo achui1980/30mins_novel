@@ -83,7 +83,7 @@ export default function ReaderPage() {
   return (
     <>
       <AppShell activeWorkId={id} right={null}>
-        <Dashboard id={id} pkg={pkg} ls={ls} onAsk={askAbout} onOpenStack={openStack} />
+        <Dashboard id={id} pkg={pkg} ls={ls} onAsk={askAbout} onOpenStack={openStack} onViewChapter={viewChapter} />
       </AppShell>
 
       {activeStack === "raw" && (

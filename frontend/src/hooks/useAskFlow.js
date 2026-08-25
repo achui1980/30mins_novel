@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getAskHistory, askQuestion } from "../api";
 
 // Data-fetching core of the "Ask AI about this book" feature: loads past
@@ -28,23 +28,26 @@ export function useAskFlow(id) {
     };
   }, [id]);
 
-  async function runAsk(questionText) {
-    const question = (questionText || "").trim();
-    if (!question || loading) return null;
-    setLoading(true);
-    setError("");
-    try {
-      const res = await askQuestion(id, question);
-      const entry = { question, answer: res.answer, cited: res.cited || [] };
-      setHistory((h) => [...h, entry]);
-      return entry;
-    } catch (err) {
-      setError(err.message);
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }
+  const runAsk = useCallback(
+    async (questionText) => {
+      const question = (questionText || "").trim();
+      if (!question || loading) return null;
+      setLoading(true);
+      setError("");
+      try {
+        const res = await askQuestion(id, question);
+        const entry = { question, answer: res.answer, cited: res.cited || [] };
+        setHistory((h) => [...h, entry]);
+        return entry;
+      } catch (err) {
+        setError(err.message);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [id, loading]
+  );
 
   return { history, loaded, loading, error, runAsk };
 }

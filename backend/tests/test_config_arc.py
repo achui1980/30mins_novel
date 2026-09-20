@@ -17,3 +17,11 @@ def test_strong_provider_inherits_llm_provider():
 
 def test_mobi_extension_allowed():
     assert ".mobi" in config.ALLOWED_EXTENSIONS
+
+
+def test_evolve_defaults():
+    from app import config
+
+    assert config.EVOLVE_STABILITY_MIN == 2
+    assert config.EVOLVE_BATCH_SIZE == 10
+    assert config.EVOLVE_ENABLED is True

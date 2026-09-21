@@ -313,13 +313,20 @@ def test_detect_transitions_survives_malformed_confirmer_output():
     assert len(warnings) == 1
 
 
-def test_detect_transitions_ignores_out_of_range_indices():
+def test_detect_transitions_ignores_out_of_range_indices(monkeypatch):
     """下标越界只能被**静默跳过**，不能 IndexError 后降级、也不能错标到别的候选。
 
     关键是 warn_cb：跳过不该有警告，而"炸了再被 except 吞掉"必然有一条警告 ——
     只断言 out == [] 分不清这两种情况（两者都返回空列表）。
+
+    同样要钉住 EVOLVE_BATCH_SIZE：负下标那一支靠"一批里有两个候选"才让
+    batch[-1] 区别于 batch[0]；批大小为 1 时两者又重合，越界保护变成碰巧生效
+    而非按设计生效。
     """
-    from app.pipeline.evolve import detect_transitions
+    from app.pipeline import evolve
+
+    monkeypatch.setattr(evolve.config, "EVOLVE_BATCH_SIZE", 10)
+    detect_transitions = evolve.detect_transitions
 
     # 正越界：batch[7] 会 IndexError，被 except 吞掉后同样返回 []，
     # 所以必须靠"没有警告"来否证它。
@@ -350,15 +357,22 @@ def test_detect_transitions_ignores_out_of_range_indices():
     assert warnings == []
 
 
-def test_detect_transitions_dedupes_and_sorts_confirmed_indices():
+def test_detect_transitions_dedupes_and_sorts_confirmed_indices(monkeypatch):
     """模型重复或乱序给下标时：每个候选只出现一次，且保持批内升序。
 
     升序是 Task 5 特意建立的按人物对排序，Tasks 8/12/17 直接消费；
     重复则会让同一条演变在前端出现两遍。
-    """
-    from app.pipeline.evolve import detect_transitions
 
-    out = detect_transitions(
+    必须钉住 EVOLVE_BATCH_SIZE：靠默认值 10 把两个候选凑进同一批是**环境依赖**。
+    环境里若有 NOVEL_KG_EVOLVE_BATCH_SIZE=1，就变成两批各 1 个，下标 1 被当越界
+    滤掉、每批只留下标 0，输出恰好也是 [丁丙, 乙甲] —— 断言照样通过，但去重与排序
+    一个都没被检验（删掉保护也 29/29 全绿）。
+    """
+    from app.pipeline import evolve
+
+    monkeypatch.setattr(evolve.config, "EVOLVE_BATCH_SIZE", 10)
+
+    out = evolve.detect_transitions(
         _two_pair_registry(), CHAPTERS, confirmer=lambda batch: [1, 0, 1, 1]
     )
     assert [c["pair"] for c in out] == [["丁", "丙"], ["乙", "甲"]]

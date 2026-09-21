@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { getStatus } from "../api";
+import { getStatus, reanalyzeWork } from "../api";
 import { PHASE_LABELS, PHASE_ORDER } from "../constants";
 import AppShell from "../components/AppShell";
 
@@ -19,6 +19,14 @@ export default function ProcessingPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState(null);
   const [error, setError] = useState("");
+  const [retryMsg, setRetryMsg] = useState("");
+  const [retryPending, setRetryPending] = useState(false);
+  // Bumped after a successful reanalyze to restart the poll chain below.
+  // The chain is self-rescheduling and deliberately stops when phase ===
+  // "failed", so by the time the failure card is on screen there is no
+  // pending timer left to pick up the new run — only re-running the effect
+  // starts a fresh chain.
+  const [retryNonce, setRetryNonce] = useState(0);
   const timer = useRef(null);
 
   useEffect(() => {
@@ -46,7 +54,25 @@ export default function ProcessingPage() {
       cancelled = true;
       clearTimeout(timer.current);
     };
-  }, [id, navigate]);
+  }, [id, navigate, retryNonce]);
+
+  async function onRetry() {
+    if (retryPending) return;
+    setRetryPending(true);
+    setRetryMsg("正在提交…");
+    try {
+      await reanalyzeWork(id);
+      setRetryMsg("");
+      // Clearing status swaps the failure card for the progress card;
+      // bumping the nonce is what actually revives polling.
+      setStatus(null);
+      setRetryNonce((n) => n + 1);
+    } catch (e) {
+      setRetryMsg(e.message || "重新分析失败");
+    } finally {
+      setRetryPending(false);
+    }
+  }
 
   const phase = status?.phase || "queued";
   const failed = phase === "failed";
@@ -86,12 +112,20 @@ export default function ProcessingPage() {
             <div className="rounded-card border border-danger-600/40 bg-danger-600/5 px-4 py-2 text-sm text-danger-600">
               处理失败：{status?.error || status?.message || "未知错误"}
             </div>
-            <Link
-              to="/"
-              className="mt-4 inline-block rounded-btn bg-seal-600 px-4 py-2 text-sm text-white hover:bg-seal-700"
-            >
-              返回首页重试
-            </Link>
+            <div className="mt-4 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onRetry}
+                disabled={retryPending}
+                className="rounded-btn bg-seal-600 px-4 py-2 text-sm text-white hover:bg-seal-700 disabled:opacity-50"
+              >
+                重新分析
+              </button>
+              <Link to="/" className="text-sm text-ink-600 hover:text-seal-600 hover:underline">
+                返回首页
+              </Link>
+            </div>
+            {retryMsg && <p className="mt-2 text-xs text-ink-600">{retryMsg}</p>}
           </div>
         ) : (
           <div className="mt-6 rounded-card border border-ink-300 bg-white p-6">

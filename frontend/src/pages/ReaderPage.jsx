@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { getWork } from "../api";
 import AppShell from "../components/AppShell";
 import AskAI from "../components/AskAI";
@@ -15,6 +15,7 @@ import { Settings } from "lucide-react";
 
 export default function ReaderPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [pkg, setPkg] = useState(null);
   const [error, setError] = useState(null);
 
@@ -34,12 +35,22 @@ export default function ReaderPage() {
         if (!cancelled) setPkg(r);
       })
       .catch((e) => {
-        if (!cancelled) setError(e.message);
+        if (cancelled) return;
+        // 后端 GET /works/{id} 只看 summary.json 是否存在（store.get_package）：
+        // 不存在但有 status 记录 -> 409。作品首次还没跑到 summarizing、或失败后
+        // 重新分析进行中，都会落到这里，回处理页看进度。
+        // 注意：曾经 done 过的作品重新分析时 summary.json 仍在（reanalyze 只清
+        // beat_summaries.json），那种情况返回 200 旧数据，不会走这个分支。
+        if (e.status === 409) {
+          navigate(`/works/${id}/processing`, { replace: true });
+          return;
+        }
+        setError(e.message);
       });
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, navigate]);
 
   function openStack(target, params) {
     setStackParams(params || null);

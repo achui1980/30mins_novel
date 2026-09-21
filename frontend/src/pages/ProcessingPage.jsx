@@ -27,7 +27,23 @@ export default function ProcessingPage() {
   // pending timer left to pick up the new run — only re-running the effect
   // starts a fresh chain.
   const [retryNonce, setRetryNonce] = useState(0);
+  // One shared timer ref is sufficient because at most one poll chain is ever
+  // alive: every teardown both poisons its own closure's `cancelled` flag and
+  // clears the pending timer, and React flushes all cleanups before all
+  // creates. A future change that lets polling continue past "failed", or that
+  // adds a second poller, would silently double-book `timer.current` and leak a
+  // timer — and no test would catch it.
   const timer = useRef(null);
+  // The live work id, for `onRetry`'s identity guard. A plain `const myId = id`
+  // comparison cannot work: `onRetry` closes over the very same `id` binding it
+  // would compare against, so the check is structurally always false. This ref
+  // is the only thing in the component that sees the *current* id from inside a
+  // stale closure. Assigned during render on purpose — it is idempotent and
+  // derived straight from the route param, so a repeated render writes the same
+  // value; doing it in an effect instead would leave a window in which a POST
+  // resolves before the effect has caught up.
+  const liveId = useRef(id);
+  liveId.current = id;
 
   useEffect(() => {
     let cancelled = false;
@@ -58,16 +74,23 @@ export default function ProcessingPage() {
 
   async function onRetry() {
     if (retryPending) return;
+    // Identity guard. The effect's `cancelled` flag is declared inside the
+    // effect body, so it does not cover anything out here: a POST for work A
+    // that resolves after the route has switched to work B would otherwise
+    // blank B's status and tear down / restart B's poll chain.
+    const myId = id;
     setRetryPending(true);
     setRetryMsg("正在提交…");
     try {
       await reanalyzeWork(id);
+      if (liveId.current !== myId) return;
       setRetryMsg("");
       // Clearing status swaps the failure card for the progress card;
       // bumping the nonce is what actually revives polling.
       setStatus(null);
       setRetryNonce((n) => n + 1);
     } catch (e) {
+      if (liveId.current !== myId) return;
       setRetryMsg(e.message || "重新分析失败");
     } finally {
       setRetryPending(false);
@@ -117,6 +140,7 @@ export default function ProcessingPage() {
                 type="button"
                 onClick={onRetry}
                 disabled={retryPending}
+                aria-busy={retryPending}
                 className="rounded-btn bg-seal-600 px-4 py-2 text-sm text-white hover:bg-seal-700 disabled:opacity-50"
               >
                 重新分析
@@ -125,7 +149,11 @@ export default function ProcessingPage() {
                 返回首页
               </Link>
             </div>
-            {retryMsg && <p className="mt-2 text-xs text-ink-600">{retryMsg}</p>}
+            {retryMsg && (
+              <p className="mt-2 text-xs text-ink-600" aria-live="polite">
+                {retryMsg}
+              </p>
+            )}
           </div>
         ) : (
           <div className="mt-6 rounded-card border border-ink-300 bg-white p-6">

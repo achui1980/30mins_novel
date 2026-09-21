@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { getStatus, reanalyzeWork } from "../api";
 import { PHASE_LABELS, PHASE_ORDER } from "../constants";
@@ -38,12 +38,31 @@ export default function ProcessingPage() {
   // comparison cannot work: `onRetry` closes over the very same `id` binding it
   // would compare against, so the check is structurally always false. This ref
   // is the only thing in the component that sees the *current* id from inside a
-  // stale closure. Assigned during render on purpose — it is idempotent and
-  // derived straight from the route param, so a repeated render writes the same
-  // value; doing it in an effect instead would leave a window in which a POST
-  // resolves before the effect has caught up.
+  // stale closure.
   const liveId = useRef(id);
-  liveId.current = id;
+
+  // `useLayoutEffect`, not `useEffect`, and not a write during render.
+  // The window this has to close is "a POST resolves while `liveId.current`
+  // still names the previous work". A POST continuation is a microtask; layout
+  // effects flush synchronously inside the commit block, and a microtask cannot
+  // interleave into synchronous JS — so by the time any continuation runs, the
+  // ref is current. `useEffect` would *not* be enough: React 18 schedules
+  // passive effects through its MessageChannel-backed scheduler, i.e. a
+  // macrotask, which a promise continuation can beat. Writing the ref during
+  // render would also close the window, but it writes on renders that may never
+  // commit (`startTransition`), so it would start lying the moment anyone made
+  // this route a transition.
+  //
+  // The two resets are a separate concern that keys off the same event: this
+  // route is /works/:id/processing, so changing `id` does *not* remount —
+  // `retryMsg` and `retryPending` are plain state and would otherwise bleed from
+  // work A to work B (a ghost "正在提交…" plus a disabled button on B's failure
+  // card). Clearing them here ties the retry UI to the work it describes.
+  useLayoutEffect(() => {
+    liveId.current = id;
+    setRetryMsg("");
+    setRetryPending(false);
+  }, [id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,7 +112,12 @@ export default function ProcessingPage() {
       if (liveId.current !== myId) return;
       setRetryMsg(e.message || "重新分析失败");
     } finally {
-      setRetryPending(false);
+      // Identity-guarded like the two branches above. Resetting `retryPending`
+      // on id change makes it possible for A's POST and B's POST to be in
+      // flight at once (previously A's leaked pending flag kept B's button
+      // disabled until A settled); an unguarded reset here would re-enable B's
+      // button mid-flight and allow a double submit for B.
+      if (liveId.current === myId) setRetryPending(false);
     }
   }
 

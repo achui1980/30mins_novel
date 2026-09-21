@@ -222,13 +222,19 @@ def test_nodes_and_edges_carry_chapter_distribution():
         "ch0010",
     )
 
-    order = {"ch0002": 1, "ch0010": 2}
+    # order 故意与字典序**相反**：ch0010 是第 1 章，ch0002 是第 2 章。
+    # 这样「按 order 取最小」和「按 id 字典序取最小」给出不同答案，
+    # min(known, key=order.__getitem__) 退化成 min(known) 时本测试必须失败。
+    order = {"ch0010": 1, "ch0002": 2}
     extraction, _, _ = build_extraction_json(reg, chapter_order=order)
 
     by_label = {n["label"]: n for n in extraction["nodes"]}
     assert by_label["甲"]["mentions_by_chapter"] == {"ch0010": 1, "ch0002": 1}
-    # first_chapter 以 order 为准，不是字典序，也不是插入顺序
-    assert by_label["甲"]["first_chapter"] == "ch0002"
+    # first_chapter 以 order 为准，不是字典序，也不是插入顺序。
+    # 字典序会答 ch0002（更小的字符串），order 答 ch0010（order=1）。
+    assert by_label["甲"]["first_chapter"] == "ch0010"
+    # 同一张 order 表下，直方图不同的人物答案也不同（乙 只出现在 ch0002）。
+    assert by_label["乙"]["first_chapter"] == "ch0002"
     assert by_label["洛阳"]["first_chapter"] == "ch0010"
     assert "mentions_by_chapter" not in by_label["洛阳"]
 
@@ -243,12 +249,17 @@ def test_build_extraction_json_without_chapter_order_still_works():
     from app.pipeline.merge import EntityRegistry
 
     reg = EntityRegistry()
+    # ch0005 先插入、ch0002 后插入，于是「插入顺序最早」= ch0005，而
+    # 「字典序最小」= ch0002，两者不同：断言 ch0002 才能真正钉住退化语义
+    # （max / next(iter()) / 插入顺序 都会答 ch0005）。
     reg.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0005")
+    reg.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0002")
 
+    # 不传 chapter_order：调用形态必须照旧可用，两个字段都要在。
     extraction, _, _ = build_extraction_json(reg)
     node = extraction["nodes"][0]
-    assert node["first_chapter"] == "ch0005"
-    assert node["mentions_by_chapter"] == {"ch0005": 1}
+    assert node["first_chapter"] == "ch0002"
+    assert node["mentions_by_chapter"] == {"ch0005": 1, "ch0002": 1}
 
 
 def test_stub_nodes_get_empty_timeline_fields():
@@ -273,3 +284,82 @@ def test_stub_nodes_get_empty_timeline_fields():
     for node in extraction["nodes"]:
         assert node["first_chapter"] == ""
         assert node["mentions_by_chapter"] == {}
+
+
+def test_first_chapter_ignores_chapter_ids_absent_from_order_table():
+    """order 表里没有的章 id 必须被**过滤掉**，而不是当成 order 0。
+
+    把 min(known, key=order.__getitem__) 换成
+    min(counts, key=lambda c: order.get(c, 0)) 时本测试必须失败：
+    零填充会让缺席的 chZZ 拿到 order 0 从而胜出，过滤则答 ch0009。
+    节点和边两条调用点都覆盖（边那条同时钉住 chapter_order 确实透传到了边）。
+    """
+    from app.models import Character, Relationship
+    from app.pipeline.graph import build_extraction_json
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    reg.add_character(Character(name="甲", aliases=[], role="", description=""), "chZZ")
+    reg.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0009")
+    reg.add_character(Character(name="乙", aliases=[], role="", description=""), "ch0009")
+    for chap in ("chZZ", "ch0009"):
+        reg.add_relationship(
+            Relationship(
+                source="甲",
+                target="乙",
+                category="朋友",
+                detail="同门",
+                evidence="甲与乙同行",
+                confidence=0.9,
+            ),
+            chap,
+        )
+
+    # chZZ 故意缺席；ch0009 的 order 故意取一个较大的数（5），
+    # 这样零填充（chZZ->0）和过滤（只剩 ch0009）的答案一定不同。
+    order = {"ch0009": 5}
+    extraction, _, _ = build_extraction_json(reg, chapter_order=order)
+
+    by_label = {n["label"]: n for n in extraction["nodes"]}
+    assert by_label["甲"]["mentions_by_chapter"] == {"chZZ": 1, "ch0009": 1}
+    assert by_label["甲"]["first_chapter"] == "ch0009"
+
+    edge = extraction["edges"][0]
+    assert edge["chapters"] == {"chZZ": 1, "ch0009": 1}
+    assert edge["first_chapter"] == "ch0009"
+
+
+def test_relationship_only_character_with_empty_histogram_yields_blank_first_chapter():
+    """merge_arcs（merge.py:465）会为「只在关系里出现过」的人物补一条
+    CharacterRecord，其 mentions_by_chapter 是空的。这条记录走的是
+    registry.characters -> 人物节点分支（graph.py:115-116），
+    和字段写死成 "" / {} 的关系补桩分支（graph.py:146-158）不是同一条路径。
+
+    所以空直方图必须在**人物节点分支**上也被覆盖：删掉 graph.py:49-50 的空值
+    保护后，min({}) 会抛 ValueError，本测试必须失败。
+    """
+    from app.models import Character
+    from app.pipeline.graph import build_extraction_json
+    from app.pipeline.merge import CharacterRecord, EntityRegistry
+
+    reg = EntityRegistry()
+    reg.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0001")
+    # 与 merge.py:465 完全相同的构造形态（mentions_by_chapter 默认空 dict）。
+    reg.characters["丙"] = CharacterRecord(canonical="丙", mention_count=1)
+
+    # 给一张可用的 order 表：空直方图不能因为「有 order 表」就走进 min({})。
+    extraction, _, _ = build_extraction_json(reg, chapter_order={"ch0001": 1})
+
+    by_label = {n["label"]: n for n in extraction["nodes"]}
+    丙 = by_label["丙"]
+    # 证明它确实是人物节点分支产出的，而不是关系补桩：补桩节点没有
+    # source_location / role / aliases 这几个键。
+    assert "source_location" in 丙
+    assert 丙["aliases"] == []
+    assert 丙["node_type"] == "character"
+    assert 丙["mention_count"] == 1
+    # 空直方图 -> 安全值，且不抛异常。
+    assert 丙["mentions_by_chapter"] == {}
+    assert 丙["first_chapter"] == ""
+    # 正常人物不受影响。
+    assert by_label["甲"]["first_chapter"] == "ch0001"

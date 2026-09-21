@@ -421,9 +421,11 @@ def merge_arcs(arc_registries, *, confirm: bool = True, confirmer=None) -> Entit
     if not arc_registries:
         return merged
     for arc in arc_registries:
-        # 重新灌入时必须 record_chapter=False：弧内记录已经是聚合过的按章分布，
-        # 再让 add_* 记一次会把 rel.chapter_id / 无章信息的那一次重复计进去。
-        # 真实分布用 _merge_counts 显式搬过来。
+        # 弧内记录已经是聚合过的按章分布，真实分布一律用 _merge_counts 显式搬运。
+        # add_relationship 这一处**必须** record_chapter=False：它要传
+        # chapter_id 去 seed rec.chapter_id（最长证据逻辑用），否则会重复计一次。
+        # add_character / add_place 两处的 record_chapter=False 只是防御性声明：
+        # 它们不传 chapter_id，守卫的 chapter_id 项本就为假。
         for rec in arc.characters.values():
             canonical = merged.add_character(
                 Character(name=rec.canonical, aliases=sorted(rec.aliases),

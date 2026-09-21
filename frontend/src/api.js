@@ -11,7 +11,11 @@ async function json(res) {
     } catch (_) {
       /* ignore */
     }
-    throw new Error(detail);
+    const err = new Error(detail);
+    // 调用方（ReaderPage / 重新分析入口）要靠状态码区分
+    // 409「正在处理中」和其他失败。
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }
@@ -85,4 +89,8 @@ export async function getTimeline(id) {
 
 export async function getChapterText(id, chapterId) {
   return apiFetch(`/works/${id}/chapters/${chapterId}/text`);
+}
+
+export async function reanalyzeWork(id) {
+  return apiFetch(`/works/${id}/reanalyze`, { method: "POST" });
 }

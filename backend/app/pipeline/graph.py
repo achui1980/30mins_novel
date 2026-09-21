@@ -37,6 +37,24 @@ def _slug(name: str, salt: int) -> str:
     return base
 
 
+def _first_chapter(
+    counts: dict[str, int], chapter_order: dict[str, int] | None
+) -> str:
+    """按章序取首次出场章。没有 order 表时退化为字典序（chNNNN 零填充）。
+
+    永不抛异常：空直方图（merge_arcs 为「只在关系里出现过的人物」补的记录就是
+    空的）返回 ""；直方图里的章 id 全都不在 order 表里时，过滤掉而不是把它们
+    的序当 0，再退化到字典序。
+    """
+    if not counts:
+        return ""
+    if chapter_order:
+        known = [c for c in counts if c in chapter_order]
+        if known:
+            return min(known, key=lambda c: chapter_order[c])
+    return min(counts)
+
+
 @dataclass
 class GraphArtifacts:
     graph: object  # networkx.Graph
@@ -47,8 +65,16 @@ class GraphArtifacts:
     label_to_id: dict
 
 
-def build_extraction_json(registry: EntityRegistry) -> tuple[dict, dict, dict]:
-    """Return (extraction_json, name_to_id, id_to_name)."""
+def build_extraction_json(
+    registry: EntityRegistry, chapter_order: dict[str, int] | None = None
+) -> tuple[dict, dict, dict]:
+    """Return (extraction_json, name_to_id, id_to_name).
+
+    ``chapter_order`` is an optional ``chapter_id -> order`` lookup (see
+    ``evolve.chapter_order_map``). It only decides which chapter counts as
+    "first": chapter precedence is judged by that numeric order, never by
+    comparing chapter-id strings. ``None`` is fully supported.
+    """
     name_to_id: dict[str, str] = {}
     id_to_name: dict[str, str] = {}
     nodes: list[dict] = []
@@ -86,6 +112,8 @@ def build_extraction_json(registry: EntityRegistry) -> tuple[dict, dict, dict]:
                 "aliases": sorted(rec.aliases),
                 "source_location": "",
                 "mention_count": rec.mention_count,
+                "mentions_by_chapter": dict(rec.mentions_by_chapter),
+                "first_chapter": _first_chapter(rec.mentions_by_chapter, chapter_order),
             }
         )
 
@@ -102,6 +130,8 @@ def build_extraction_json(registry: EntityRegistry) -> tuple[dict, dict, dict]:
                 "description": rec.description,
                 "source_location": "",
                 "mention_count": rec.mention_count,
+                # 地点只用它推首次出场章，不画曲线，所以不带 mentions_by_chapter。
+                "first_chapter": _first_chapter(rec.mentions_by_chapter, chapter_order),
             }
         )
 
@@ -122,6 +152,8 @@ def build_extraction_json(registry: EntityRegistry) -> tuple[dict, dict, dict]:
                             "node_type": "character",
                             "description": "",
                             "mention_count": 1,
+                            "mentions_by_chapter": {},
+                            "first_chapter": "",
                         }
                     )
         try:
@@ -141,6 +173,10 @@ def build_extraction_json(registry: EntityRegistry) -> tuple[dict, dict, dict]:
                 "confidence_label": confidence_label(rec.confidence),
                 "directed": cat_enum in DIRECTED_CATEGORIES,
                 "weight": max(1, rec.count),
+                # 注意：weight 仍来自 rec.count，不从 chapters 推导。
+                # count != sum(chapters.values())（见 merge.py:81-83），这是有意的。
+                "chapters": dict(rec.chapters),
+                "first_chapter": _first_chapter(rec.chapters, chapter_order),
                 "source_location": "",
             }
         )
@@ -160,12 +196,16 @@ def run_graphify(
     graph_json_path: Path,
     graph_html_path: Path,
     community_labeler=None,
+    chapter_order: dict[str, int] | None = None,
 ) -> GraphArtifacts:
     """Run the full graphify build and write graph.json + graph.html.
 
     ``community_labeler`` is an optional callable
     ``(communities, id_to_name, registry) -> {community_id: label}``. If None,
     a simple heuristic label (top character in the community) is used.
+
+    ``chapter_order`` is passed straight through to ``build_extraction_json`` so
+    the per-node/per-edge ``first_chapter`` fields are ranked by chapter order.
     """
     import graphify.analyze as analyze
     import graphify.cluster as cluster_mod
@@ -177,7 +217,9 @@ def run_graphify(
     except Exception:  # pragma: no cover - fallback path
         from graphify.export import to_html  # type: ignore
 
-    extraction, name_to_id, id_to_name = build_extraction_json(registry)
+    extraction, name_to_id, id_to_name = build_extraction_json(
+        registry, chapter_order=chapter_order
+    )
     G = build_from_json(extraction, directed=False)
 
     communities = cluster_mod.cluster(G) or {}

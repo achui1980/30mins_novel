@@ -198,3 +198,78 @@ def test_edges_have_empty_source_location_placeholder():
     assert edges, "expected at least one edge"
     for edge in edges:
         assert edge["source_location"] == ""
+
+
+def test_nodes_and_edges_carry_chapter_distribution():
+    from app.models import Character, Place, Relationship
+    from app.pipeline.graph import build_extraction_json
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    reg.add_character(Character(name="甲", aliases=[], role="主角", description="少年"), "ch0010")
+    reg.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0002")
+    reg.add_character(Character(name="乙", aliases=[], role="", description=""), "ch0002")
+    reg.add_place(Place(name="洛阳", description="东都"), "ch0010")
+    reg.add_relationship(
+        Relationship(
+            source="甲",
+            target="乙",
+            category="朋友",
+            detail="同门",
+            evidence="甲与乙同行",
+            confidence=0.9,
+        ),
+        "ch0010",
+    )
+
+    order = {"ch0002": 1, "ch0010": 2}
+    extraction, _, _ = build_extraction_json(reg, chapter_order=order)
+
+    by_label = {n["label"]: n for n in extraction["nodes"]}
+    assert by_label["甲"]["mentions_by_chapter"] == {"ch0010": 1, "ch0002": 1}
+    # first_chapter 以 order 为准，不是字典序，也不是插入顺序
+    assert by_label["甲"]["first_chapter"] == "ch0002"
+    assert by_label["洛阳"]["first_chapter"] == "ch0010"
+    assert "mentions_by_chapter" not in by_label["洛阳"]
+
+    edge = extraction["edges"][0]
+    assert edge["chapters"] == {"ch0010": 1}
+    assert edge["first_chapter"] == "ch0010"
+
+
+def test_build_extraction_json_without_chapter_order_still_works():
+    from app.models import Character
+    from app.pipeline.graph import build_extraction_json
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    reg.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0005")
+
+    extraction, _, _ = build_extraction_json(reg)
+    node = extraction["nodes"][0]
+    assert node["first_chapter"] == "ch0005"
+    assert node["mentions_by_chapter"] == {"ch0005": 1}
+
+
+def test_stub_nodes_get_empty_timeline_fields():
+    from app.models import Relationship
+    from app.pipeline.graph import build_extraction_json
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    reg.add_relationship(
+        Relationship(
+            source="甲",
+            target="乙",
+            category="朋友",
+            detail="",
+            evidence="",
+            confidence=0.5,
+        ),
+        "ch0001",
+    )
+
+    extraction, _, _ = build_extraction_json(reg, chapter_order={"ch0001": 1})
+    for node in extraction["nodes"]:
+        assert node["first_chapter"] == ""
+        assert node["mentions_by_chapter"] == {}

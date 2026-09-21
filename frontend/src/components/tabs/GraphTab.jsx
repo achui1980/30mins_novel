@@ -5,7 +5,8 @@
 // 已对着 vis-network 9.1.13 的源码确认过这条路径：
 //   DataSet.update -> NodesHandler/EdgesHandler.update -> Node/Edge.setOptions
 //   （options.hidden !== undefined 时返回 true）-> emit("_dataChanged")
-//   -> emit("_dataUpdated") -> Network._updateVisibleIndices() + _requestRedraw
+//   -> emit("_dataUpdated") -> Network._updateVisibleIndices()
+//                              + _updateValueRange(nodes/edges) + _requestRedraw
 // 全程不碰 node.x/y，坐标稳定，代价是 O(变化量)。而 Network.setData 会先
 // emit("resetPhysics") + emit("_resetData")，布局从头重跑、拖过的位置全丢。
 //
@@ -30,6 +31,16 @@
 //   力场就**真的变了** —— 剩下的节点会重新找平衡，拖滑块开始让整张图重新铺开，
 //   正好毁掉「用 hidden 而不用 setData」这整个设计唯一要保住的 UX 性质（节点位置稳定）。
 //   换句话说那个"优化"会从另一条路重新引入我们花力气绕开的 setData 行为。
+//
+// **_updateValueRange 为什么可以不管**：同一个 _dataUpdated 处理函数里，紧挨着
+// _updateVisibleIndices 还会跑 _updateValueRange(body.nodes) / (body.edges)
+// （:36148-36149，和 startSimulation 同一批）。它在这里是**空转**的：它只读
+// getValue() 也就是 options.value（:20200 节点 / :23067 边），而下面的节点大小走
+// `size`、边粗细走 `width`，**从不设 value**，于是 valueMin/valueMax 恒为
+// undefined，setValueRange 一个条目都不会被调到。退一步说即便将来改用 value，
+// hidden 也仍然不影响它：_updateVisibleIndices 重建的是 body.nodeIndices /
+// body.edgeIndices（:36103-36104）这两张**另外的**索引表，被隐藏的条目依旧完整
+// 留在 body.nodes / body.edges 里，取值范围在 hidden 翻转前后完全相同。
 //
 // **浅合并不变式**：DataSet._updateItem 是 `{...item, ...update}` 的**浅合并**（:15843），
 // 所以 update({id, hidden}) 只覆盖 hidden，条目上挂的 _raw / _transition 原样留下 ——
@@ -278,8 +289,17 @@ export default function GraphTab({ id, setRight, onViewChapter }) {
     };
     // 依赖数组是**完整**的，刻意不加 eslint 抑制：effect 闭包里的自由变量只有这五个
     // 反应式值，剩下的是 ref（豁免）、useState setter（规则已知稳定）和模块作用域的
-    // 导入/常量/函数。于是「将来谁让 orderMap / transitionIndex 变得每帧新身份，
-    // 整张网络会被静默地反复重建」这件事由 lint 来拦，而不是靠注释提醒。
+    // 导入/常量/函数。
+    // 不加抑制换来的好处只有一条，而且是**将来**才兑现的：万一以后谁重构这个
+    // effect 时**漏写**一个依赖，装上 ESLint 后能被 react-hooks/exhaustive-deps 抓到；
+    // 留着抑制注释则连这条都拿不到。今天它并没有在把关 —— 本仓库**完全没有 ESLint**
+    // （没有配置文件、package.json 里没有这个依赖、node_modules/.bin 下也没有 eslint
+    // 可执行文件），与 AGENTS.md 的「no lint/format/typecheck config」一致。
+    //   ⚠️ 别把它当成身份稳定性的护栏：exhaustive-deps 只查依赖的**缺失与多余**，
+    //   对「某个依赖每帧都是新身份」没有任何概念。orderMap / transitionIndex 已经
+    //   老老实实列在下面了，所以将来谁让它们变得每帧新身份（比如把
+    //   buildTimeline 的 useMemo 拆了），整张网络会被静默地反复重建，而 lint
+    //   会一路放行。守住这件事的是 timeline 那个 useMemo 的记忆化本身，不是工具。
     // 注意这里**没有** cutoff —— 拖滑块绝不重建网络，只走下面的 hidden diff。
   }, [graph, edges, showAllPlaces, orderMap, transitionIndex]);
 

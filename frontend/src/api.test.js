@@ -72,4 +72,21 @@ describe("api error status", () => {
     expect(err.status).toBe(404);
     expect(err.message).toBe("Not Found");
   });
+
+  it("falls back to statusText when a JSON error body has no detail field", async () => {
+    // 5xx 的 JSON body 里常常没有 detail；丢掉 `|| detail` 兜底会得到一个空消息。
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        fakeResponse({ status: 500, statusText: "Internal Server Error", body: {} }),
+      ),
+    );
+
+    const err = await getWork("w1").then(
+      () => null,
+      (e) => e,
+    );
+    expect(err.status).toBe(500);
+    expect(err.message).toBe("Internal Server Error");
+  });
 });

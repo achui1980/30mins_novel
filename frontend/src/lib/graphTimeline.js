@@ -1,6 +1,14 @@
 // 关系图时间维度的纯函数层 (design §5)。
 // 章节先后只以 order 为准 —— chNNNN 的字典序恰好和章序一致是巧合，不是契约，
 // 因此本文件里任何"早 / 晚"的判断都必须过一遍 chapters[].order 查表。
+//
+// 本文件里所有 `chapters` 参数指的都是 graph.json 的**顶层** chapters，
+// 记录形状为 `{ id: string, title?: string, order: number }`。
+// 注意前端还存在另一份形状不同的章节列表：`layered_summary.chapters` 的记录是
+// `{ chapter, summary }`（没有 id、没有 order，而且只覆盖一部分章节，
+// 见 lib/readingProgress.js 里按 c.chapter 取值）。把那一份喂进来不会报错，
+// 只会得到空的 orderMap / buckets —— 时间轴看着在但什么都不过滤。
+// 用 buildTimeline(graph) 就不会拿错。
 
 export const MAX_BUCKETS = 16;
 export const PER_CHAPTER_MAX = 20;
@@ -17,7 +25,12 @@ function chapterOrderValue(chapter) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** chapter_id -> order 的查表。order 缺失/非数字的章节直接不进表。 */
+/**
+ * chapter_id -> order 的查表。order 缺失/非数字的章节直接不进表。
+ * @param {Array<{id: string, title?: string, order: number}>} chapters
+ *   顶层 chapters。**不要**传 layered_summary.chapters（`{chapter, summary}`），
+ *   那个形状会得到一张空表。
+ */
 export function buildChapterOrder(chapters) {
   const map = new Map();
   for (const c of chapters || []) {
@@ -34,10 +47,22 @@ function sortedChapters(chapters) {
     .sort((a, b) => chapterOrderValue(a) - chapterOrderValue(b));
 }
 
+function chapterLabel(chapter) {
+  return chapter.title || chapter.id;
+}
+
 /**
  * 章节分桶。≤PER_CHAPTER_MAX 章时一章一档；否则均分成 MAX_BUCKETS 档。
- * 每档的 label 取档内首章标题，cutoff 取档内**末章**的 order
- * （停在第 k 档意味着"读到第 k 档结束"）。
+ *
+ * 每档：
+ *  - `cutoff`  档内**末章**的 order（停在第 k 档 = "读到第 k 档结束"）。
+ *              Task 17 的可见性过滤依赖这个语义，别改。
+ *  - `label`   档内**首章**标题（保留给需要"这一档从哪开始"的场景）。
+ *  - `rangeLabel` 这一档实际覆盖的范围，多章时是"首章–末章"。
+ *              滑块要显示的是这个 —— 只显示 label 会比 cutoff 少报最多一整档。
+ *  - `chapterId` 档内末章的 id，和 cutoff 同一章（保留字段，暂无消费者）。
+ *
+ * @param {Array<{id: string, title?: string, order: number}>} chapters 顶层 chapters。
  */
 export function buildBuckets(chapters, options) {
   const { maxBuckets = MAX_BUCKETS, perChapterMax = PER_CHAPTER_MAX } = options || {};
@@ -46,7 +71,8 @@ export function buildBuckets(chapters, options) {
 
   if (list.length <= perChapterMax) {
     return list.map((c) => ({
-      label: c.title || c.id,
+      label: chapterLabel(c),
+      rangeLabel: chapterLabel(c),
       cutoff: chapterOrderValue(c),
       chapterId: c.id,
     }));
@@ -59,8 +85,11 @@ export function buildBuckets(chapters, options) {
     if (end < start) continue;
     const first = list[start];
     const last = list[end];
+    const firstLabel = chapterLabel(first);
+    const lastLabel = chapterLabel(last);
     buckets.push({
-      label: first.title || first.id,
+      label: firstLabel,
+      rangeLabel: start === end ? firstLabel : `${firstLabel}–${lastLabel}`,
       cutoff: chapterOrderValue(last),
       chapterId: last.id,
     });
@@ -82,25 +111,38 @@ export function isVisibleAt(item, cutoff, orderMap) {
 }
 
 /**
- * 把 mentions_by_chapter 聚合到 buckets 上，返回与 buckets 等长的计数数组。
- * 地点节点没有 mentions_by_chapter，所以这里必须容忍字段缺失（全 0）。
- * 不在 orderMap 里的章节 id 会被**丢弃** —— 把它当成 order 0 会让它错误地
- * 堆进第一个桶里。
+ * 提及曲线的柱子：**一章一根**，顺序按 order 排。
+ * 超过 cutoff 的章节标 dimmed（仍然返回，只是画淡）。
+ *
+ * 必须容忍三种真实数据：
+ *  - 地点节点根本没有 mentions_by_chapter 字段；
+ *  - 只靠关系入场的人物 mentions_by_chapter 是 `{}`（全 0 的平坦曲线）；
+ *  - mentions_by_chapter 里出现不在 chapters 里的章节 id（输出按章对齐，
+ *    这种 key 不会有自己的柱子，也**不会**被塞进第一根柱子里）。
+ *
+ * @param {Array<{id: string, title?: string, order: number}>} chapters 顶层 chapters。
+ * @returns {Array<{chapterId: string, count: number, dimmed: boolean}>}
  */
-export function mentionSeries(node, buckets, orderMap) {
-  const list = Array.isArray(buckets) ? buckets : [];
-  const counts = list.map(() => 0);
-  const mentions = node && node.mentions_by_chapter;
-  if (!mentions || counts.length === 0) return counts;
+export function mentionBars(node, chapters, cutoff) {
+  const list = sortedChapters(chapters);
+  const mentions = (node && node.mentions_by_chapter) || {};
+  const raw = Number(cutoff);
+  const limit = Number.isFinite(raw) ? raw : Infinity;
+  return list.map((c) => ({
+    chapterId: c.id,
+    count: Number(mentions[c.id]) || 0,
+    dimmed: chapterOrderValue(c) > limit,
+  }));
+}
 
-  for (const [cid, raw] of Object.entries(mentions)) {
-    const order = orderMap && orderMap.get(cid);
-    if (!Number.isFinite(order)) continue;
-    const idx = list.findIndex((b) => order <= b.cutoff);
-    if (idx < 0) continue;
-    counts[idx] += Number(raw) || 0;
+/** 柱子里的最大值，用来给柱高归一化。空/全 0 时返回 0，调用方需自己防除零。 */
+export function mentionPeak(bars) {
+  let peak = 0;
+  for (const b of bars || []) {
+    const n = Number(b && b.count) || 0;
+    if (n > peak) peak = n;
   }
-  return counts;
+  return peak;
 }
 
 /** 与顺序无关的人物对键。 */
@@ -117,4 +159,24 @@ export function buildTransitionIndex(transitions) {
     index.set(pairKey(pair[0], pair[1]), t);
   }
   return index;
+}
+
+/**
+ * 时间轴的唯一入口：章节列表只从 graph 的**顶层** chapters 取，
+ * 调用方没机会传错那一份 layered_summary.chapters。
+ * 建议 Task 17 只调这一个函数，别分别调 buildChapterOrder / buildBuckets。
+ *
+ * `hasTimeline` 就是降级判定那**一个**闸门的结果，不是新增的第二个闸门。
+ * 注意：顶层 chapters 存在但形状不对时，hasTimeline 仍是 true，而
+ * buckets/orderMap 会是空的 —— 见文件头的说明。
+ */
+export function buildTimeline(graph, options) {
+  const chapters = hasTimeline(graph) ? graph.chapters : [];
+  return {
+    hasTimeline: hasTimeline(graph),
+    chapters: sortedChapters(chapters),
+    orderMap: buildChapterOrder(chapters),
+    buckets: buildBuckets(chapters, options),
+    transitionIndex: buildTransitionIndex(graph && graph.transitions),
+  };
 }

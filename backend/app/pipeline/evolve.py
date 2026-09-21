@@ -28,12 +28,27 @@ def chapter_order_map(chapters: Iterable[dict]) -> dict[str, int]:
 
     章节先后**只以 order 为准**。chNNNN 的字典序恰好和章序一致是巧合，
     不是契约。
+
+    畸形输入一律跳过、绝不抛异常（兑现模块头部的"永不抛异常"约定）：
+    非 dict 元素忽略，缺 id 的元素忽略。
+
+    order 缺失或非数值时退化成该元素的**枚举下标**，而不是 0：退化成 0 会让
+    所有章节同序，prefilter_candidates 的"同章并存"判断随即否掉每一对人物，
+    transitions 永久为空且没有任何报错。用下标至少保住单调性，让漏传 order
+    的调用方降级而不是静默失效。
     """
     out: dict[str, int] = {}
-    for item in chapters or []:
-        cid = (item or {}).get("id")
-        if cid:
-            out[cid] = int(item.get("order") or 0)
+    for index, item in enumerate(chapters or []):
+        if not isinstance(item, dict):
+            continue
+        cid = item.get("id")
+        if not cid:
+            continue
+        try:
+            order = int(item["order"])
+        except (KeyError, TypeError, ValueError):
+            order = index
+        out[str(cid)] = order
     return out
 
 
@@ -82,6 +97,9 @@ def prefilter_candidates(
                 "pair": [pair[0], pair[1]],
                 "steps": [
                     {
+                        # 这里的 chapter_id 是上面按 order 最小推出的**首次出场章**，
+                        # 与 RelationRecord.chapter_id（"最长证据所在章"，语义不稳）
+                        # 同名但不同义。spec §4.1 定的字段名就是 chapter_id。
                         "chapter_id": chapter_id,
                         "category": rec.category,
                         "evidence": rec.evidence,

@@ -95,6 +95,46 @@ def _init_status(work_id: str, title: str, granularity: str) -> None:
     )
 
 
+@router.post(
+    "/works/{work_id}/reanalyze", status_code=202, response_model=CreateWorkResponse
+)
+async def reanalyze_work(
+    work_id: str, background_tasks: BackgroundTasks
+) -> CreateWorkResponse:
+    """用磁盘上已有的 raw.* 重跑一次管道（design §6）。
+
+    不预删旧产物：管道会逐阶段覆盖它们。预删的话中途失败就把作品毁了，
+    覆盖则失败后仍能看到上一次的结果。
+    """
+    # read_meta 内部会走 config.work_dir 校验 work_id，非法 id -> 400。
+    meta = store.read_meta(work_id)
+    if meta is None:
+        raise HTTPException(404, "作品不存在")
+
+    status = store.get_status(work_id)
+    if status is not None and status.phase not in ("done", "failed"):
+        raise HTTPException(409, "该作品正在处理中")
+
+    raw_path = store.find_raw_path(work_id)
+    if raw_path is None:
+        raise HTTPException(409, "原始文件已丢失，无法重新分析")
+
+    # beat_summaries.json 按 beat 下标做键，spine.json 会重建，必须清掉。
+    store.clear_beat_cache(work_id)
+
+    filename = meta.get("filename") or raw_path.name
+    title = meta.get("title") or filename.rsplit(".", 1)[0]
+    granularity = meta.get("granularity") or "quick"
+    if granularity not in ("quick", "complete"):
+        granularity = "quick"
+
+    _init_status(work_id, title, granularity)
+    background_tasks.add_task(
+        _launch_pipeline, work_id, raw_path, filename, title, granularity
+    )
+    return CreateWorkResponse(work_id=work_id, status="queued", reused=False)
+
+
 @router.get("/works")
 async def list_works():
     return [item.model_dump() for item in store.list_works()]

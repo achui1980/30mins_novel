@@ -540,3 +540,136 @@ def test_ask_question_404_when_graph_missing(client):
 
     res = client.post(f"/works/{work_id}/ask", json={"question": "任何问题"})
     assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /works/{work_id}/reanalyze
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def data_root(client):
+    """The temp DATA_ROOT the `client` fixture redirected config to."""
+    return config.DATA_ROOT
+
+
+def _seed_work(tmp_root, work_id, phase="done"):
+    """在磁盘上摆出一个"已完成"的作品，供 reanalyze 用。"""
+    import json
+
+    wdir = tmp_root / work_id
+    wdir.mkdir(parents=True, exist_ok=True)
+    (wdir / "raw.txt").write_text("第一章\n甲与乙。\n", encoding="utf-8")
+    (wdir / "meta.json").write_text(
+        json.dumps(
+            {
+                "filename": "novel.txt",
+                "title": "旧作品",
+                "granularity": "quick",
+                "content_sha256": "deadbeef",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (wdir / "status.json").write_text(
+        json.dumps(
+            {
+                "work_id": work_id,
+                "title": "旧作品",
+                "granularity": "quick",
+                "phase": phase,
+                "progress": 1.0,
+                "message": "",
+                "warnings": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return wdir
+
+
+def test_reanalyze_returns_202_and_queues(client, data_root):
+    wdir = _seed_work(data_root, "re0001")
+    (wdir / "beat_summaries.json").write_text("{}", encoding="utf-8")
+    (wdir / "chapter_summaries.json").write_text("{}", encoding="utf-8")
+
+    res = client.post("/works/re0001/reanalyze")
+    assert res.status_code == 202
+    body = res.json()
+    assert body["work_id"] == "re0001"
+    assert body["status"] == "queued"
+    assert body["reused"] is False
+    assert not (wdir / "beat_summaries.json").exists()
+    assert (wdir / "chapter_summaries.json").exists()
+
+
+def test_reanalyze_rejects_malformed_work_id(client):
+    res = client.post("/works/bad%20id/reanalyze")
+    assert res.status_code == 400
+
+
+def test_reanalyze_404_for_unknown_work(client, data_root):
+    res = client.post("/works/nosuchwork/reanalyze")
+    assert res.status_code == 404
+
+
+def test_reanalyze_409_while_processing(client, data_root):
+    _seed_work(data_root, "re0002", phase="extracting")
+    res = client.post("/works/re0002/reanalyze")
+    assert res.status_code == 409
+
+
+def test_reanalyze_409_when_raw_file_missing(client, data_root):
+    wdir = _seed_work(data_root, "re0003")
+    (wdir / "raw.txt").unlink()
+    res = client.post("/works/re0003/reanalyze")
+    assert res.status_code == 409
+
+
+def test_reanalyze_requeues_status_and_dispatches_saved_upload(
+    client, data_root, monkeypatch
+):
+    """status.json must revert to `queued` so the frontend can navigate straight
+    to the processing page, and the job must be dispatched with the *saved*
+    raw.* plus meta.json's filename/title/granularity (no re-upload).
+
+    _launch_pipeline is stubbed so status.json can be observed in its
+    freshly-queued state: TestClient runs BackgroundTasks to completion before
+    returning, and a real run would immediately overwrite it with phase=done.
+    """
+    from app import routes
+
+    wdir = _seed_work(data_root, "re0004")
+    # granularity=complete (not the route's "quick" fallback) so the assertion
+    # below can only pass if meta.json was actually read.
+    (wdir / "meta.json").write_text(
+        json.dumps(
+            {
+                "filename": "novel.txt",
+                "title": "旧作品",
+                "granularity": "complete",
+                "content_sha256": "deadbeef",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    calls: list[tuple] = []
+    monkeypatch.setattr(routes, "_launch_pipeline", lambda *args: calls.append(args))
+
+    res = client.post("/works/re0004/reanalyze")
+    assert res.status_code == 202
+
+    status = json.loads((wdir / "status.json").read_text(encoding="utf-8"))
+    assert status["phase"] == "queued"
+    assert status["progress"] == 0.0
+
+    assert len(calls) == 1
+    got_work_id, got_raw_path, got_filename, got_title, got_granularity = calls[0]
+    assert got_work_id == "re0004"
+    assert got_raw_path == wdir / "raw.txt"
+    assert got_filename == "novel.txt"
+    assert got_title == "旧作品"
+    assert got_granularity == "complete"

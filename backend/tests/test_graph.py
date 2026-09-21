@@ -363,3 +363,76 @@ def test_relationship_only_character_with_empty_histogram_yields_blank_first_cha
     assert 丙["first_chapter"] == ""
     # 正常人物不受影响。
     assert by_label["甲"]["first_chapter"] == "ch0001"
+
+
+# -- patch_graph_timeline ---------------------------------------------------------
+
+
+def test_patch_graph_timeline_injects_top_level_keys(tmp_path):
+    import json
+
+    from app.pipeline.graph import patch_graph_timeline
+
+    path = tmp_path / "graph.json"
+    path.write_text(
+        json.dumps({"nodes": [{"id": "n1"}], "edges": []}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    chapters = [{"id": "ch0001", "title": "第一章", "order": 1}]
+    transitions = [
+        {
+            "pair": ["甲", "乙"],
+            "steps": [{"chapter_id": "ch0001", "category": "朋友", "evidence": "同行"}],
+            "confirmed": True,
+        }
+    ]
+
+    patch_graph_timeline(path, chapters, transitions, {"甲": "jia", "乙": "yi"})
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["chapters"] == chapters
+    assert data["transitions"][0]["pair"] == ["jia", "yi"]
+    assert data["transitions"][0]["confirmed"] is True
+    assert data["nodes"] == [{"id": "n1"}]
+
+
+def test_patch_graph_timeline_drops_transitions_with_unknown_names(tmp_path):
+    import json
+
+    from app.pipeline.graph import patch_graph_timeline
+
+    path = tmp_path / "graph.json"
+    path.write_text(json.dumps({"nodes": [], "edges": []}), encoding="utf-8")
+    transitions = [{"pair": ["甲", "丙"], "steps": [], "confirmed": False}]
+
+    patch_graph_timeline(path, [], transitions, {"甲": "jia"})
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["transitions"] == []
+
+    # pair 长度不是 2 的条目同样静默丢弃：删掉长度保护后，1 元 pair 会
+    # IndexError（函数契约是永不抛异常），3 元 pair 会被截成一条假演变。
+    # 同时放一条名字全部可解析、confirmed=False 的**存活**条目，钉住
+    # bool(item.get("confirmed")) 的取值 —— 写死成 True 必须让本测试失败。
+    malformed = [
+        {"pair": ["甲"], "steps": [], "confirmed": True},
+        {"pair": ["甲", "乙", "丁"], "steps": [], "confirmed": True},
+        {"pair": ["甲", "乙"], "steps": [], "confirmed": False},
+    ]
+    patch_graph_timeline(path, [], malformed, {"甲": "jia", "乙": "yi", "丁": "ding"})
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["transitions"] == [{"pair": ["jia", "yi"], "steps": [], "confirmed": False}]
+
+
+def test_patch_graph_timeline_never_raises_on_bad_file(tmp_path):
+    from app.pipeline.graph import patch_graph_timeline
+
+    missing = tmp_path / "nope.json"
+    patch_graph_timeline(missing, [], [], {})
+    assert not missing.exists()
+
+    broken = tmp_path / "broken.json"
+    broken.write_text("{not json", encoding="utf-8")
+    patch_graph_timeline(broken, [{"id": "ch0001", "title": "x", "order": 1}], [], {})
+    assert broken.read_text(encoding="utf-8") == "{not json"

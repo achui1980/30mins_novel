@@ -240,3 +240,38 @@ def test_add_extraction_threads_chapter_into_characters():
 
     assert reg.characters["甲"].mentions_by_chapter == {"ch0007": 1}
     assert reg.places["洛阳"].mentions_by_chapter == {"ch0007": 1}
+
+
+def test_record_chapter_false_suppresses_histogram_but_keeps_counts():
+    """record_chapter=False 只压制按章直方图，mention_count 照常 +1。
+
+    跨弧合并 (merge_arcs) 依赖这个语义重新灌入弧记录：真实的按章分布由
+    _merge_counts 直接搬运，add_* 不能再自己记一次。
+    """
+    from app.models import Character, Place
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    reg.add_character(
+        Character(name="甲", aliases=[], role="", description=""),
+        "ch0001",
+        record_chapter=False,
+    )
+    reg.add_place(
+        Place(name="洛阳", description=""),
+        "ch0001",
+        record_chapter=False,
+    )
+
+    assert reg.characters["甲"].mentions_by_chapter == {}
+    assert reg.characters["甲"].mention_count == 1
+    assert reg.places["洛阳"].mentions_by_chapter == {}
+    assert reg.places["洛阳"].mention_count == 1
+
+    # 默认仍然记章，且与被压制的那次累计在同一条记录上。
+    reg.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0001")
+    reg.add_place(Place(name="洛阳", description=""), "ch0001")
+    assert reg.characters["甲"].mentions_by_chapter == {"ch0001": 1}
+    assert reg.characters["甲"].mention_count == 2
+    assert reg.places["洛阳"].mentions_by_chapter == {"ch0001": 1}
+    assert reg.places["洛阳"].mention_count == 2

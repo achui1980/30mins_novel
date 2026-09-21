@@ -371,6 +371,7 @@ def _apply_merge(merged, src, tgt):
     trec.aliases.update(srec.aliases)
     trec.aliases.add(src)
     trec.mention_count += srec.mention_count
+    _merge_counts(trec.mentions_by_chapter, srec.mentions_by_chapter)
     if srec.role and not trec.role:
         trec.role = srec.role
     if len(srec.description) > len(trec.description):
@@ -399,9 +400,11 @@ def _apply_merge(merged, src, tgt):
             new_rels[key] = RelationRecord(source=ns, target=nt, category=cat,
                                            detail=rec.detail, evidence=rec.evidence,
                                            confidence=rec.confidence, count=rec.count,
-                                           chapter_id=rec.chapter_id)
+                                           chapter_id=rec.chapter_id,
+                                           chapters=dict(rec.chapters))
         else:
             old.count += rec.count
+            _merge_counts(old.chapters, rec.chapters)
             old.confidence = max(old.confidence, rec.confidence)
             if len(rec.detail) > len(old.detail):
                 old.detail = rec.detail
@@ -418,19 +421,39 @@ def merge_arcs(arc_registries, *, confirm: bool = True, confirmer=None) -> Entit
     if not arc_registries:
         return merged
     for arc in arc_registries:
+        # 重新灌入时必须 record_chapter=False：弧内记录已经是聚合过的按章分布，
+        # 再让 add_* 记一次会把 rel.chapter_id / 无章信息的那一次重复计进去。
+        # 真实分布用 _merge_counts 显式搬过来。
         for rec in arc.characters.values():
-            merged.add_character(Character(name=rec.canonical, aliases=sorted(rec.aliases),
-                                           role=rec.role, description=rec.description))
+            canonical = merged.add_character(
+                Character(name=rec.canonical, aliases=sorted(rec.aliases),
+                          role=rec.role, description=rec.description),
+                record_chapter=False,
+            )
+            _merge_counts(
+                merged.characters[canonical].mentions_by_chapter,
+                rec.mentions_by_chapter,
+            )
         for rec in arc.places.values():
-            merged.add_place(Place(name=rec.canonical, description=rec.description))
+            place_canonical = merged.add_place(
+                Place(name=rec.canonical, description=rec.description),
+                record_chapter=False,
+            )
+            _merge_counts(
+                merged.places[place_canonical].mentions_by_chapter,
+                rec.mentions_by_chapter,
+            )
         for rel in arc.relationships.values():
-            merged.add_relationship(
+            merged_rel = merged.add_relationship(
                 Relationship(
                     source=rel.source, target=rel.target, category=rel.category,
                     detail=rel.detail, evidence=rel.evidence, confidence=rel.confidence,
                 ),
                 chapter_id=rel.chapter_id,
+                record_chapter=False,
             )
+            if merged_rel is not None:
+                _merge_counts(merged_rel.chapters, rel.chapters)
         merged.events.extend(dict(ev) for ev in arc.events)
     # Materialize characters referenced only by relationships so the merged
     # registry is the complete world (graph nodes) for downstream phases.

@@ -156,3 +156,86 @@ def test_merge_arcs_preserves_chapter_id_with_longest_evidence():
     rec = merged.relationships[key]
     assert rec.evidence == "更长的一段原文证据"
     assert rec.chapter_id == "ch0002"
+
+
+def test_merge_arcs_preserves_chapter_distributions():
+    from app.models import Character, Place, Relationship
+    from app.pipeline.merge import EntityRegistry, merge_arcs
+
+    arc1 = EntityRegistry()
+    arc1.add_character(Character(name="甲", aliases=[], role="主角", description="少年"), "ch0001")
+    arc1.add_character(Character(name="乙", aliases=[], role="", description=""), "ch0001")
+    arc1.add_place(Place(name="洛阳", description="东都"), "ch0001")
+    arc1.add_relationship(
+        Relationship(
+            source="甲",
+            target="乙",
+            category="朋友",
+            detail="同门",
+            evidence="甲与乙同行",
+            confidence=0.9,
+        ),
+        "ch0001",
+    )
+
+    arc2 = EntityRegistry()
+    arc2.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0009")
+    arc2.add_character(Character(name="乙", aliases=[], role="", description=""), "ch0009")
+    arc2.add_place(Place(name="洛阳", description=""), "ch0009")
+    arc2.add_relationship(
+        Relationship(
+            source="甲",
+            target="乙",
+            category="朋友",
+            detail="",
+            evidence="",
+            confidence=0.5,
+        ),
+        "ch0009",
+    )
+
+    merged = merge_arcs([arc1, arc2], confirm=False)
+
+    assert merged.characters["甲"].mentions_by_chapter == {"ch0001": 1, "ch0009": 1}
+    assert merged.places["洛阳"].mentions_by_chapter == {"ch0001": 1, "ch0009": 1}
+    rec = next(iter(merged.relationships.values()))
+    assert rec.chapters == {"ch0001": 1, "ch0009": 1}
+
+
+def test_apply_merge_folds_chapter_distributions():
+    from app.models import Character, Relationship
+    from app.pipeline.merge import EntityRegistry, _apply_merge
+
+    reg = EntityRegistry()
+    reg.add_character(Character(name="张三", aliases=[], role="", description=""), "ch0001")
+    reg.add_character(Character(name="张三丰", aliases=[], role="", description=""), "ch0004")
+    reg.add_character(Character(name="乙", aliases=[], role="", description=""), "ch0001")
+    reg.add_relationship(
+        Relationship(
+            source="张三",
+            target="乙",
+            category="朋友",
+            detail="",
+            evidence="",
+            confidence=0.5,
+        ),
+        "ch0001",
+    )
+    reg.add_relationship(
+        Relationship(
+            source="张三丰",
+            target="乙",
+            category="朋友",
+            detail="",
+            evidence="",
+            confidence=0.5,
+        ),
+        "ch0004",
+    )
+
+    _apply_merge(reg, "张三丰", "张三")
+
+    assert "张三丰" not in reg.characters
+    assert reg.characters["张三"].mentions_by_chapter == {"ch0001": 1, "ch0004": 1}
+    rec = next(iter(reg.relationships.values()))
+    assert rec.chapters == {"ch0001": 1, "ch0004": 1}

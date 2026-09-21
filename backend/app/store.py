@@ -29,6 +29,29 @@ def save_upload(work_id: str, filename: str, data: bytes) -> Path:
     return raw_path
 
 
+def find_raw_path(work_id: str) -> Path | None:
+    """找回作品目录下的 raw.<ext>（重新分析时复用，不必重新上传）。"""
+    wdir = config.work_dir(work_id)
+    if not wdir.exists():
+        return None
+    for path in sorted(wdir.glob("raw.*")):
+        if path.is_file():
+            return path
+    return None
+
+
+def clear_beat_cache(work_id: str) -> None:
+    """删掉 beat_summaries.json。
+
+    它按 beat 下标做键，而 spine.json 会在重新分析时重建，下标含义会变，
+    留着就会错位。chapter_summaries.json（按 chapter_id）与 ask_history.json
+    （用户可见历史）都保留。
+    """
+    path = config.work_dir(work_id) / "beat_summaries.json"
+    if path.exists():
+        path.unlink()
+
+
 def write_meta(work_id: str, meta: dict) -> None:
     wdir = config.work_dir(work_id)
     wdir.mkdir(parents=True, exist_ok=True)

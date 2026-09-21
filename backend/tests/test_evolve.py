@@ -207,3 +207,194 @@ def test_prefilter_still_works_when_chapters_lack_order():
     cands = prefilter_candidates(reg, order)
     assert len(cands) == 1
     assert [s["chapter_id"] for s in cands[0]["steps"]] == ["ch0001", "ch0020"]
+
+
+# -- detect_transitions：强模型确认与降级 -----------------------------------
+
+
+def _two_state_registry():
+    reg = EntityRegistry()
+    for chapter in ("ch0001", "ch0002"):
+        reg.add_relationship(_rel("甲", "乙", "朋友", "并肩而行"), chapter)
+    for chapter in ("ch0010", "ch0020"):
+        reg.add_relationship(_rel("甲", "乙", "敌人", "拔剑相向"), chapter)
+    return reg
+
+
+def test_detect_transitions_fake_mode_keeps_prefilter_unconfirmed():
+    """离线模式跳过强模型，直接采纳预过滤结果（confirmed=False）。"""
+    from app.pipeline.evolve import detect_transitions
+
+    out = detect_transitions(_two_state_registry(), CHAPTERS)
+    assert len(out) == 1
+    assert out[0]["confirmed"] is False
+    assert [s["category"] for s in out[0]["steps"]] == ["朋友", "敌人"]
+
+
+def test_detect_transitions_uses_confirmer_and_marks_confirmed():
+    from app.pipeline.evolve import detect_transitions
+
+    seen = {}
+
+    def confirmer(batch):
+        seen["size"] = len(batch)
+        return [0]
+
+    out = detect_transitions(_two_state_registry(), CHAPTERS, confirmer=confirmer)
+    assert seen["size"] == 1
+    assert len(out) == 1
+    assert out[0]["confirmed"] is True
+
+
+def test_detect_transitions_drops_rejected_candidates():
+    from app.pipeline.evolve import detect_transitions
+
+    out = detect_transitions(_two_state_registry(), CHAPTERS, confirmer=lambda batch: [])
+    assert out == []
+
+
+def test_detect_transitions_never_raises_and_warns():
+    from app.pipeline.evolve import detect_transitions
+
+    warnings = []
+
+    def boom(batch):
+        raise RuntimeError("模型挂了")
+
+    out = detect_transitions(
+        _two_state_registry(), CHAPTERS, confirmer=boom, warn_cb=warnings.append
+    )
+    assert out == []
+    assert len(warnings) == 1
+    assert "关系演变" in warnings[0]
+
+
+def test_detect_transitions_survives_malformed_confirmer_output():
+    """强模型返回的东西根本不能迭代时，也只能降级成"没有演变"。"""
+    from app.pipeline.evolve import detect_transitions
+
+    warnings = []
+    out = detect_transitions(
+        _two_state_registry(),
+        CHAPTERS,
+        confirmer=lambda batch: None,
+        warn_cb=warnings.append,
+    )
+    assert out == []
+    assert len(warnings) == 1
+
+
+def test_detect_transitions_ignores_out_of_range_indices():
+    """下标越界是模型幻觉，不能 IndexError、也不能错标到别的候选上。"""
+    from app.pipeline.evolve import detect_transitions
+
+    out = detect_transitions(
+        _two_state_registry(), CHAPTERS, confirmer=lambda batch: [7, -1]
+    )
+    assert out == []
+
+
+def test_detect_transitions_respects_kill_switch(monkeypatch):
+    from app.pipeline import evolve
+
+    monkeypatch.setattr(evolve.config, "EVOLVE_ENABLED", False)
+    assert evolve.detect_transitions(_two_state_registry(), CHAPTERS) == []
+
+
+def test_kill_switch_skips_the_strong_model_entirely(monkeypatch):
+    """总开关关掉时连候选都不该送去确认（省掉整个强模型开销）。"""
+    from app.pipeline import evolve
+
+    monkeypatch.setattr(evolve.config, "EVOLVE_ENABLED", False)
+
+    def boom(batch):  # pragma: no cover - 被调用即说明开关失效
+        raise AssertionError("kill switch 未生效：confirmer 仍被调用")
+
+    assert (
+        evolve.detect_transitions(
+            _two_state_registry(), CHAPTERS, confirmer=boom
+        )
+        == []
+    )
+
+
+def test_detect_transitions_returns_empty_without_candidates():
+    from app.pipeline.evolve import detect_transitions
+
+    reg = EntityRegistry()
+    reg.add_relationship(_rel("甲", "乙", "朋友"), "ch0001")
+    assert detect_transitions(reg, CHAPTERS) == []
+
+
+def test_detect_transitions_batches_by_config(monkeypatch):
+    """候选多于一批时按 EVOLVE_BATCH_SIZE 切批，下标须相对每批解释。"""
+    from app.pipeline import evolve
+
+    monkeypatch.setattr(evolve.config, "EVOLVE_BATCH_SIZE", 1)
+
+    reg = EntityRegistry()
+    for first, second in (("甲", "乙"), ("丙", "丁")):
+        for _ in range(2):
+            reg.add_relationship(_rel(first, second, "朋友"), "ch0001")
+        for _ in range(2):
+            reg.add_relationship(_rel(first, second, "敌人"), "ch0020")
+
+    sizes = []
+
+    def confirmer(batch):
+        sizes.append(len(batch))
+        return [0]
+
+    out = evolve.detect_transitions(reg, CHAPTERS, confirmer=confirmer)
+    assert sizes == [1, 1]
+    assert [c["pair"] for c in out] == [["丁", "丙"], ["乙", "甲"]]
+    assert all(c["confirmed"] is True for c in out)
+
+
+def test_detect_transitions_does_not_mutate_prefilter_candidates():
+    """确认标记必须写在副本上，别把预过滤结果就地改掉。"""
+    from app.pipeline import evolve
+
+    captured = []
+
+    def confirmer(batch):
+        captured.extend(batch)
+        return [0]
+
+    out = evolve.detect_transitions(
+        _two_state_registry(), CHAPTERS, confirmer=confirmer
+    )
+    assert out[0]["confirmed"] is True
+    assert captured[0]["confirmed"] is False
+
+
+def test_llm_confirm_matches_structured_output_signature(monkeypatch):
+    """_llm_confirm 必须能真的调通 llm.structured_output。
+
+    structured_output 的 system_prompt 是必填关键字参数（无默认值）。漏传它会
+    TypeError，被"永不抛异常"的 except 吞掉，于是线上确认路径永久静默降级成
+    "没有演变" —— 用真实签名绑定一次是唯一能否证这点的办法。
+    """
+    from app.pipeline import evolve, llm
+
+    calls = {}
+
+    def fake_structured_output(
+        schema, prompt, *, system_prompt, what="", attempts=3, tier="fast"
+    ):
+        calls["tier"] = tier
+        calls["what"] = what
+        calls["prompt"] = prompt
+        return schema(items=[{"index": 0, "is_evolution": True}])
+
+    monkeypatch.setattr(llm, "structured_output", fake_structured_output)
+    monkeypatch.setattr(evolve.config, "USE_FAKE_LLM", False)
+
+    out = evolve.detect_transitions(_two_state_registry(), CHAPTERS)
+    assert len(out) == 1, "确认路径未跑通（很可能被 except 吞了 TypeError）"
+    assert out[0]["confirmed"] is True
+    assert calls["tier"] == "strong"
+    assert calls["what"] == "RelationEvolutionConfirm"
+    # 判断规则拼在正文里，而不是只靠 system_prompt。
+    assert "真的随剧情发生了转变" in calls["prompt"]
+    assert "朋友" in calls["prompt"] and "敌人" in calls["prompt"]

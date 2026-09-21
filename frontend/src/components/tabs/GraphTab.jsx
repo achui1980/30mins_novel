@@ -16,6 +16,27 @@
 // 这一点很重要：merge 阶段会给关系补章节计数而不补端点的提及计数，所以一条边的
 // first_chapter 可以**早于**它两端节点的 first_chapter（节点与边各自独立算 hidden），
 // 靠 vis 的这条规则才不会出现「悬空的边」。
+//
+// ──── 上面那条链子少写了一步，而少写的这一步正是最容易被"优化"掉的 ────
+// （行号均对 node_modules/vis-network/standalone/umd/vis-network.js @ 9.1.13）
+//
+// **物理不变式**：_dataUpdated 的处理函数除了 _updateVisibleIndices + _requestRedraw，
+// 还会 `emit("startSimulation")`（:36151）—— 也就是说滑块**每动一格**，力导向模拟
+// 都会被重新点起来。它无害**只是因为**物理成员资格是按 `options.physics === true`
+// 判定的，**不看 hidden**（:25226 节点 / :25235 边）：被隐藏的节点和边依然完整地留在
+// 力场里，力场在 hidden 翻转前后完全相同，所以当前布局本来就已经是这个力场的不动点，
+// 重启的模拟原地收敛，一个节点都不会动。
+//   ⚠️ **推论（改之前必读）**：如果谁以后为了省算力给隐藏的条目加上 `physics: false`，
+//   力场就**真的变了** —— 剩下的节点会重新找平衡，拖滑块开始让整张图重新铺开，
+//   正好毁掉「用 hidden 而不用 setData」这整个设计唯一要保住的 UX 性质（节点位置稳定）。
+//   换句话说那个"优化"会从另一条路重新引入我们花力气绕开的 setData 行为。
+//
+// **浅合并不变式**：DataSet._updateItem 是 `{...item, ...update}` 的**浅合并**（:15843），
+// 所以 update({id, hidden}) 只覆盖 hidden，条目上挂的 _raw / _transition 原样留下 ——
+// 这正是每个条目的 _raw 载荷能活过任意多次 hidden 补丁的原因。
+// 如果它是 replace 语义，下一轮 diff 读到的就是 `_raw === undefined`，
+// firstChapterOrder 拿不到 first_chapter 就返回 0，isVisibleAt 对任何东西都返回 true，
+// 于是过滤器会**静默地把整张图重新显示出来**（不报错、不空图，只是过滤失效）。
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getGraph, reanalyzeWork } from "../../api";
@@ -68,11 +89,36 @@ export function isStepAfterCutoff(step, orderMap, cutoff) {
   return order > cutoff;
 }
 
+/**
+ * 边数组的唯一出口。
+ *
+ * **真实产物里这个键叫 `links`，不叫 `edges`** —— graphify 的 to_json 输出的是
+ * networkx node-link 形状。对着 data/works/t17verify0001/graph.json 核过：顶层键是
+ * `['directed','multigraph','graph','nodes','links','hyperedges',...]`，**没有 edges**。
+ * 而仓库里的手写夹具/示例用的是 `edges`，所以两种键名都得吃。
+ *
+ * 去掉 `|| graph.links` 这一支的后果不是抛错、不是空图，而是**每一张真实图谱都静默地
+ * 渲染成零条边**：节点全在、图例照画、滑块照常动、右栏节点卡片照常弹 —— 看起来
+ * 完全正常，只是关系全没了。没有任何运行时症状会把它暴露出来，所以这两种键名在
+ * GraphTab.test.js 里各自被独立钉住。
+ */
+export function edgeList(graph) {
+  return graph?.edges || graph?.links || [];
+}
+
 export default function GraphTab({ id, setRight, onViewChapter }) {
   const containerRef = useRef(null);
   const nodesDsRef = useRef(null);
   const edgesDsRef = useRef(null);
   const cutoffRef = useRef(Infinity);
+  // onViewChapter 从 ReaderPage.jsx:61 以**普通函数**传进来（不是 useCallback），
+  // 每次 render 都是新身份。放进右栏 effect 的依赖会让右栏每帧重建；省略它又是个
+  // 按构造成立的 stale closure。用 ref 拿"当下最新的一份"，effect 就既不用依赖它、
+  // 也不会读到旧的 —— 依赖数组因此可以写全，不需要 eslint 抑制。
+  const onViewChapterRef = useRef(onViewChapter);
+  useEffect(() => {
+    onViewChapterRef.current = onViewChapter;
+  }, [onViewChapter]);
 
   const [graph, setGraph] = useState(null);
   const [error, setError] = useState("");
@@ -87,11 +133,7 @@ export default function GraphTab({ id, setRight, onViewChapter }) {
     getGraph(id).then(setGraph).catch((e) => setError(e.message));
   }, [id]);
 
-  const edges = useMemo(() => {
-    if (!graph) return [];
-    // 真实产物里边数组叫 links（graphify 的 to_json），保留两种键名。
-    return graph.edges || graph.links || [];
-  }, [graph]);
+  const edges = useMemo(() => edgeList(graph), [graph]);
 
   // 时间轴的**唯一**入口。刻意不分别调 buildChapterOrder / buildBuckets：
   // 前端还存在另一份形状不同的章节列表（layered_summary.chapters 是
@@ -234,7 +276,11 @@ export default function GraphTab({ id, setRight, onViewChapter }) {
       edgesDsRef.current = null;
       if (network) network.destroy();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // 依赖数组是**完整**的，刻意不加 eslint 抑制：effect 闭包里的自由变量只有这五个
+    // 反应式值，剩下的是 ref（豁免）、useState setter（规则已知稳定）和模块作用域的
+    // 导入/常量/函数。于是「将来谁让 orderMap / transitionIndex 变得每帧新身份，
+    // 整张网络会被静默地反复重建」这件事由 lint 来拦，而不是靠注释提醒。
+    // 注意这里**没有** cutoff —— 拖滑块绝不重建网络，只走下面的 hidden diff。
   }, [graph, edges, showAllPlaces, orderMap, transitionIndex]);
 
   // 拖动滑块：只批量改 hidden，绝不 setData（否则布局重跑、节点乱跳）。
@@ -259,16 +305,27 @@ export default function GraphTab({ id, setRight, onViewChapter }) {
     if (edgePatch.length > 0) edgesDs.update(edgePatch);
   }, [cutoff, orderMap, built]);
 
+  // 右栏被**故意拆成两个** effect，因为两者的触发条件不同：
+  //  - 占位文案只跟 detail 有关，不能跟着 cutoff 跑。合在一起时滑块每动一格都会
+  //    重建一次占位 <div> 并 push 进父组件 state，换来一次
+  //    GraphStack → StackShell → GraphTab 的重渲染和零像素的视觉变化。
+  //  - 详情卡片必须跟着 cutoff 走（出场曲线的 cutoff、演变 step 的画淡都依赖它）。
+  // 两个 effect 都调 setRight 不会打架：React 在一次 commit 里先跑完所有 cleanup
+  // 再跑所有 body，且按声明顺序，所以任一时刻最后一次 setRight 都来自条件成立的那个。
   useEffect(() => {
-    if (!detail?.data) {
-      setRight(<div className="text-sm text-ink-600">点击图谱中的节点或连线查看详情</div>);
-      return () => setRight(null);
-    }
+    if (detail?.data) return undefined;
+    setRight(<div className="text-sm text-ink-600">点击图谱中的节点或连线查看详情</div>);
+    return () => setRight(null);
+  }, [detail, setRight]);
+
+  useEffect(() => {
+    if (!detail?.data) return undefined;
 
     function jumpTo(location) {
       if (!location) return;
       const [chapterId, para] = String(location).split("#p");
-      onViewChapter?.(chapterId, para !== undefined ? Number(para) : undefined);
+      // 走 ref 而不是闭包里的 onViewChapter：见 onViewChapterRef 处的说明。
+      onViewChapterRef.current?.(chapterId, para !== undefined ? Number(para) : undefined);
     }
 
     if (detail.type === "node") {
@@ -365,8 +422,8 @@ export default function GraphTab({ id, setRight, onViewChapter }) {
       );
     }
     return () => setRight(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail, chapters, chapterTitles, cutoff, orderMap, timelineOn]);
+    // 依赖数组同样是完整的（onViewChapter 走 ref，不进依赖），所以这里也没有抑制。
+  }, [detail, chapters, chapterTitles, cutoff, orderMap, timelineOn, setRight]);
 
   async function onReanalyze() {
     setReanalyzeMsg("正在提交…");

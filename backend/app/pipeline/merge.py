@@ -46,6 +46,8 @@ class CharacterRecord:
     role: str = ""
     description: str = ""
     mention_count: int = 0
+    # chapter_id -> 该章提及次数。用于前端人物出场曲线。
+    mentions_by_chapter: dict[str, int] = field(default_factory=dict)
 
     def all_names(self) -> set[str]:
         return {self.canonical, *self.aliases}
@@ -61,6 +63,8 @@ class PlaceRecord:
     canonical: str
     description: str = ""
     mention_count: int = 0
+    # chapter_id -> 该章提及次数。地点只用它推首次出场章，不画曲线。
+    mentions_by_chapter: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -105,7 +109,13 @@ class EntityRegistry:
         return best[1] if best else None
 
     # -- ingestion ----------------------------------------------------------
-    def add_character(self, char: Character) -> str:
+    def add_character(
+        self,
+        char: Character,
+        chapter_id: str = "",
+        *,
+        record_chapter: bool = True,
+    ) -> str:
         canonical = self.resolve_character(char.name)
         if canonical is None:
             # Also try resolving via any provided alias before creating new.
@@ -124,6 +134,10 @@ class EntityRegistry:
 
         rec = self.characters[canonical]
         rec.mention_count += 1
+        if record_chapter and chapter_id:
+            rec.mentions_by_chapter[chapter_id] = (
+                rec.mentions_by_chapter.get(chapter_id, 0) + 1
+            )
         if not rec.role and char.role:
             rec.role = char.role
         if len(char.description) > len(rec.description):
@@ -137,7 +151,13 @@ class EntityRegistry:
             self._alias_index.setdefault(_norm(alias), canonical)
         return canonical
 
-    def add_place(self, place: Place) -> str:
+    def add_place(
+        self,
+        place: Place,
+        chapter_id: str = "",
+        *,
+        record_chapter: bool = True,
+    ) -> str:
         key = _norm(place.name)
         canonical = self._place_index.get(key)
         if canonical is None:
@@ -146,6 +166,10 @@ class EntityRegistry:
             self._place_index[key] = canonical
         rec = self.places[canonical]
         rec.mention_count += 1
+        if record_chapter and chapter_id:
+            rec.mentions_by_chapter[chapter_id] = (
+                rec.mentions_by_chapter.get(chapter_id, 0) + 1
+            )
         if len(place.description) > len(rec.description):
             rec.description = place.description
         return canonical
@@ -194,9 +218,9 @@ class EntityRegistry:
 
     def add_extraction(self, extraction: ChunkExtraction, chapter_id: str) -> None:
         for c in extraction.characters:
-            self.add_character(c)
+            self.add_character(c, chapter_id)
         for p in extraction.places:
-            self.add_place(p)
+            self.add_place(p, chapter_id)
         for r in extraction.relationships:
             self.add_relationship(r, chapter_id)
         for e in extraction.events:

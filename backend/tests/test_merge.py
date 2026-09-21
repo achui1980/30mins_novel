@@ -198,3 +198,45 @@ def test_add_relationship_returns_none_for_self_loop():
         confidence=0.5,
     )
     assert reg.add_relationship(rel, "ch0001") is None
+
+
+def test_add_character_records_mentions_by_chapter():
+    from app.models import Character
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    reg.add_character(Character(name="甲", aliases=[], role="主角", description="少年"), "ch0001")
+    reg.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0001")
+    reg.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0003")
+
+    rec = reg.characters["甲"]
+    assert rec.mentions_by_chapter == {"ch0001": 2, "ch0003": 1}
+    assert rec.mention_count == 3
+
+
+def test_add_place_records_mentions_by_chapter():
+    from app.models import Place
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    reg.add_place(Place(name="洛阳", description="东都"), "ch0002")
+    reg.add_place(Place(name="洛阳", description=""), "ch0004")
+
+    assert reg.places["洛阳"].mentions_by_chapter == {"ch0002": 1, "ch0004": 1}
+
+
+def test_add_extraction_threads_chapter_into_characters():
+    from app.models import ChunkExtraction, Character, Place
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    extraction = ChunkExtraction(
+        characters=[Character(name="甲", aliases=[], role="", description="")],
+        places=[Place(name="洛阳", description="")],
+        events=[],
+        relationships=[],
+    )
+    reg.add_extraction(extraction, "ch0007")
+
+    assert reg.characters["甲"].mentions_by_chapter == {"ch0007": 1}
+    assert reg.places["洛阳"].mentions_by_chapter == {"ch0007": 1}

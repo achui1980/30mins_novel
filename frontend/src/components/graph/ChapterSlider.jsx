@@ -17,7 +17,9 @@ export default function ChapterSlider({ buckets, value, onChange }) {
   const last = buckets.length - 1;
   // value 是**档位下标**，不是章节 order —— 这里的 `|| 0` 只是把 NaN/undefined
   // 夹回"最开始"，和 lib 里禁止给未知章节 order 兜 0 是两回事。
-  const index = Math.max(0, Math.min(Number(value) || 0, last));
+  // Math.trunc 不能省：3.7 这种小数会让 buckets[3.7] 变成 undefined，
+  // 「读到：」后面就空了一片，同时还把 3.7 推进 step=1 的 range input。
+  const index = Math.max(0, Math.min(Math.trunc(Number(value) || 0), last));
   const currentText = bucketText(buckets[index]);
   const startText = bucketText(buckets[0]);
   const endText = bucketText(buckets[last]);
@@ -40,6 +42,9 @@ export default function ChapterSlider({ buckets, value, onChange }) {
         value={index}
         onChange={(e) => onChange(Number(e.target.value))}
         aria-label="章节时间轴"
+        // 只有 aria-label 的话读屏只会念"15 of 15"，章节范围到不了辅助技术；
+        // title 不是键盘/读屏的可靠通道，所以把 rangeLabel 挂在 aria-valuetext 上。
+        aria-valuetext={currentText}
         className="mt-2 w-full accent-seal-600"
       />
       <div className="mt-1 flex justify-between gap-3 text-xs text-ink-600">

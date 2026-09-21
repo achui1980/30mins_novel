@@ -11,8 +11,14 @@
 
 import { mentionBars, mentionPeak } from "../../lib/graphTimeline";
 
+// WIDTH/HEIGHT 只是 viewBox 的坐标系，不是渲染尺寸 —— SVG 上刻意不写 width/height
+// 属性，改成 className 让它随容器缩放（和 MiniGraphPreview 同一路子）。本组件的落点是
+// AppShell 右栏（w-[200px] p-3 = 176px 可用宽），写死 220px 会横向溢出，而右栏有
+// overflow-y 就意味着 overflow-x: auto，最靠近 cutoff 的那几章会被推到屏幕外。
 const WIDTH = 220;
 const HEIGHT = 44;
+// GAP 在长篇上其实是失效的：137 章时 slot = 1.606，barWidth = max(1, 0.606) = 1，
+// 柱子之间的间隙只靠 x 的小数位错开，不靠 GAP。
 const GAP = 1;
 const MIN_BAR = 2;
 
@@ -31,9 +37,8 @@ export default function MentionSparkline({ node, chapters, cutoff }) {
   return (
     <div className="mt-2">
       <svg
-        width={WIDTH}
-        height={HEIGHT}
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        className="h-11 w-full"
         role="img"
         aria-label="按章提及次数"
       >

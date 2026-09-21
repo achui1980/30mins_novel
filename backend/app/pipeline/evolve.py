@@ -206,12 +206,14 @@ def detect_transitions(
         kept: list[dict] = []
         for start in range(0, len(candidates), batch_size):
             batch = candidates[start : start + batch_size]
-            # 下标由模型给出，越界一律忽略（幻觉不能错标到别的候选上）。
-            for index in confirm(batch):
-                if 0 <= index < len(batch):
-                    item = dict(batch[index])  # 副本：别就地改预过滤结果
-                    item["confirmed"] = True
-                    kept.append(item)
+            # 下标全由模型给出，三重不信任一次收敛在这行循环头里：
+            # 越界忽略（幻觉不能错标到别的候选，负下标更会静默命中最后一个）、
+            # 去重（否则同一条演变在前端出现两遍）、
+            # 升序（Task 5 特意建立的按人物对排序，Tasks 8/12/17 直接消费）。
+            for index in sorted({i for i in confirm(batch) if 0 <= i < len(batch)}):
+                item = dict(batch[index])  # 副本：别就地改预过滤结果
+                item["confirmed"] = True
+                kept.append(item)
         return kept
     except Exception:  # noqa: BLE001 - 本模块的契约就是永不抛异常
         logger.warning("evolve: 关系演变判定失败，本次不输出演变", exc_info=True)

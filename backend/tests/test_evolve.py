@@ -221,11 +221,40 @@ def _two_state_registry():
     return reg
 
 
-def test_detect_transitions_fake_mode_keeps_prefilter_unconfirmed():
-    """离线模式跳过强模型，直接采纳预过滤结果（confirmed=False）。"""
-    from app.pipeline.evolve import detect_transitions
+def _two_pair_registry():
+    """两对人物各有一次演变 —— 预过滤输出按人物对排序为 [丁丙, 乙甲]。
 
-    out = detect_transitions(_two_state_registry(), CHAPTERS)
+    需要两个候选才能看见"下标 -1 错标到最后一个候选"这类越界后果：只有一个
+    候选时 batch[-1] is batch[0]，错标与正解完全同形，测不出来。
+    """
+    reg = EntityRegistry()
+    for first, second in (("甲", "乙"), ("丙", "丁")):
+        for _ in range(2):
+            reg.add_relationship(_rel(first, second, "朋友"), "ch0001")
+        for _ in range(2):
+            reg.add_relationship(_rel(first, second, "敌人"), "ch0020")
+    return reg
+
+
+def test_two_pair_registry_yields_two_sorted_candidates():
+    """给下面几个测试兜底：辅助函数真的产出两个按对排序的候选。"""
+    cands = prefilter_candidates(_two_pair_registry(), ORDER)
+    assert [c["pair"] for c in cands] == [["丁", "丙"], ["乙", "甲"]]
+
+
+def test_detect_transitions_fake_mode_keeps_prefilter_unconfirmed(monkeypatch):
+    """离线模式跳过强模型，直接采纳预过滤结果（confirmed=False）。
+
+    显式把 config.USE_FAKE_LLM 设成 True，不靠 conftest 的
+    os.environ.setdefault —— setdefault 不会覆盖环境里已有的
+    NOVEL_KG_USE_FAKE_LLM=0，那种环境下本测试会掉进 _llm_confirm
+    真去打 Bedrock。断言要钉的是分支，不是跑测试的机器。
+    """
+    from app.pipeline import evolve
+
+    monkeypatch.setattr(evolve.config, "USE_FAKE_LLM", True)
+
+    out = evolve.detect_transitions(_two_state_registry(), CHAPTERS)
     assert len(out) == 1
     assert out[0]["confirmed"] is False
     assert [s["category"] for s in out[0]["steps"]] == ["朋友", "敌人"]
@@ -285,13 +314,55 @@ def test_detect_transitions_survives_malformed_confirmer_output():
 
 
 def test_detect_transitions_ignores_out_of_range_indices():
-    """下标越界是模型幻觉，不能 IndexError、也不能错标到别的候选上。"""
+    """下标越界只能被**静默跳过**，不能 IndexError 后降级、也不能错标到别的候选。
+
+    关键是 warn_cb：跳过不该有警告，而"炸了再被 except 吞掉"必然有一条警告 ——
+    只断言 out == [] 分不清这两种情况（两者都返回空列表）。
+    """
+    from app.pipeline.evolve import detect_transitions
+
+    # 正越界：batch[7] 会 IndexError，被 except 吞掉后同样返回 []，
+    # 所以必须靠"没有警告"来否证它。
+    warnings = []
+    assert (
+        detect_transitions(
+            _two_pair_registry(),
+            CHAPTERS,
+            confirmer=lambda batch: [7, -1],
+            warn_cb=warnings.append,
+        )
+        == []
+    )
+    assert warnings == [], "越界下标应被静默跳过，而不是抛异常后降级"
+
+    # 负下标：Python 的 batch[-1] 合法，会把**最后一个**候选错标成已确认。
+    # 这一支不抛异常，只有两个候选时才看得见错标。
+    warnings = []
+    assert (
+        detect_transitions(
+            _two_pair_registry(),
+            CHAPTERS,
+            confirmer=lambda batch: [-1],
+            warn_cb=warnings.append,
+        )
+        == []
+    ), "负下标不能被当成「最后一个候选」而错标"
+    assert warnings == []
+
+
+def test_detect_transitions_dedupes_and_sorts_confirmed_indices():
+    """模型重复或乱序给下标时：每个候选只出现一次，且保持批内升序。
+
+    升序是 Task 5 特意建立的按人物对排序，Tasks 8/12/17 直接消费；
+    重复则会让同一条演变在前端出现两遍。
+    """
     from app.pipeline.evolve import detect_transitions
 
     out = detect_transitions(
-        _two_state_registry(), CHAPTERS, confirmer=lambda batch: [7, -1]
+        _two_pair_registry(), CHAPTERS, confirmer=lambda batch: [1, 0, 1, 1]
     )
-    assert out == []
+    assert [c["pair"] for c in out] == [["丁", "丙"], ["乙", "甲"]]
+    assert all(c["confirmed"] is True for c in out)
 
 
 def test_detect_transitions_respects_kill_switch(monkeypatch):
@@ -302,20 +373,27 @@ def test_detect_transitions_respects_kill_switch(monkeypatch):
 
 
 def test_kill_switch_skips_the_strong_model_entirely(monkeypatch):
-    """总开关关掉时连候选都不该送去确认（省掉整个强模型开销）。"""
+    """总开关关掉时连候选都不该送去确认（省掉整个强模型开销）。
+
+    用间谍记录而**不是**在 confirmer 里抛异常：在"永不抛异常"的边界内抛任何
+    东西都不构成断言 —— AssertionError 也是 Exception，会被 except 吞掉，
+    函数照样返回 []，删掉总开关也测不出来。
+    """
     from app.pipeline import evolve
 
     monkeypatch.setattr(evolve.config, "EVOLVE_ENABLED", False)
 
-    def boom(batch):  # pragma: no cover - 被调用即说明开关失效
-        raise AssertionError("kill switch 未生效：confirmer 仍被调用")
+    called = []
+
+    def spy(batch):
+        called.append(batch)
+        return []
 
     assert (
-        evolve.detect_transitions(
-            _two_state_registry(), CHAPTERS, confirmer=boom
-        )
+        evolve.detect_transitions(_two_state_registry(), CHAPTERS, confirmer=spy)
         == []
     )
+    assert called == [], "kill switch 未生效：confirmer 仍被调用"
 
 
 def test_detect_transitions_returns_empty_without_candidates():

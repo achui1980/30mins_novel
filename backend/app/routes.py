@@ -112,6 +112,14 @@ async def reanalyze_work(
         raise HTTPException(404, "作品不存在")
 
     status = store.get_status(work_id)
+    # 不变量（TOCTOU）：这里的阶段检查和下面的 _init_status() 写入**不是原子的**。
+    # 今天之所以安全，仅仅因为本协程从这一行到 _init_status() 之间**没有任何 await**，
+    # 所以这一段在事件循环上不会被别的请求切入。这是偶然而非设计。
+    # 一旦在这中间引入 await（例如给上面几次磁盘读加 asyncio.to_thread），或者用多
+    # worker 启 uvicorn，两个并发 POST 就能同时通过本守卫、各自 dispatch 一条管道到
+    # 同一个 work 目录（MAX_CONCURRENT_JOBS 默认 3，见 app/config.py）。
+    # 要真正修好需要按 work_id 加锁或改成原子的 compare-and-set；见设计文档
+    # docs/superpowers/specs/2026-09-20-relation-graph-timeline-design.md §11.3。
     if status is not None and status.phase not in ("done", "failed"):
         raise HTTPException(409, "该作品正在处理中")
 

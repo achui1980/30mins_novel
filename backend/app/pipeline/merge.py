@@ -33,6 +33,12 @@ def _norm(name: str) -> str:
     return name.strip().lower().replace(" ", "").replace("\u3000", "")
 
 
+def _merge_counts(dst: dict[str, int], src: dict[str, int]) -> None:
+    """把 src 的按章计数累加进 dst（原地）。"""
+    for key, value in src.items():
+        dst[key] = dst.get(key, 0) + value
+
+
 @dataclass
 class CharacterRecord:
     canonical: str
@@ -67,6 +73,10 @@ class RelationRecord:
     confidence: float = 0.0
     count: int = 0
     chapter_id: str = ""
+    # 该「关系类别」在各章出现的次数。chapter_id -> count。
+    # 注意 count 不等于 sum(chapters.values())：跨弧合并时 count 走公开 API
+    # 每弧只 +1，而 chapters 是真实分布，后者才是时间轴的依据。
+    chapters: dict[str, int] = field(default_factory=dict)
 
 
 class EntityRegistry:
@@ -140,11 +150,17 @@ class EntityRegistry:
             rec.description = place.description
         return canonical
 
-    def add_relationship(self, rel: Relationship, chapter_id: str = "") -> None:
+    def add_relationship(
+        self,
+        rel: Relationship,
+        chapter_id: str = "",
+        *,
+        record_chapter: bool = True,
+    ) -> RelationRecord | None:
         src = self.resolve_character(rel.source) or rel.source.strip()
         tgt = self.resolve_character(rel.target) or rel.target.strip()
         if src == tgt:
-            return
+            return None
         category = rel.category.value if hasattr(rel.category, "value") else str(rel.category)
         # Undirected categories: normalize the key so (a,b)==(b,a).
         from ..models import DIRECTED_CATEGORIES, RelationCategory
@@ -172,6 +188,9 @@ class EntityRegistry:
         if len(rel.evidence) > len(rec.evidence):
             rec.evidence = rel.evidence
             rec.chapter_id = chapter_id
+        if record_chapter and chapter_id:
+            rec.chapters[chapter_id] = rec.chapters.get(chapter_id, 0) + 1
+        return rec
 
     def add_extraction(self, extraction: ChunkExtraction, chapter_id: str) -> None:
         for c in extraction.characters:

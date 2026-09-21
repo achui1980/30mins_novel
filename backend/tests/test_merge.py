@@ -140,3 +140,61 @@ def test_add_extraction_threads_chapter_id_into_relationships():
     reg.add_extraction(ext, chapter_id="ch0003")
     rec = next(iter(reg.relationships.values()))
     assert rec.chapter_id == "ch0003"
+
+
+def test_add_relationship_accumulates_chapters():
+    from app.models import Relationship
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    rel = Relationship(
+        source="甲",
+        target="乙",
+        category="朋友",
+        detail="同门",
+        evidence="甲与乙同行",
+        confidence=0.9,
+    )
+    reg.add_relationship(rel, "ch0001")
+    reg.add_relationship(rel, "ch0001")
+    reg.add_relationship(rel, "ch0005")
+
+    rec = next(iter(reg.relationships.values()))
+    assert rec.chapters == {"ch0001": 2, "ch0005": 1}
+    assert rec.count == 3
+
+
+def test_add_relationship_returns_record_and_skips_chapter_when_asked():
+    from app.models import Relationship
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    rel = Relationship(
+        source="甲",
+        target="乙",
+        category="朋友",
+        detail="",
+        evidence="",
+        confidence=0.5,
+    )
+    rec = reg.add_relationship(rel, "ch0002", record_chapter=False)
+    assert rec is not None
+    assert rec.chapters == {}
+    assert rec.count == 1
+    assert rec.chapter_id == "ch0002"
+
+
+def test_add_relationship_returns_none_for_self_loop():
+    from app.models import Relationship
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    rel = Relationship(
+        source="甲",
+        target="甲",
+        category="朋友",
+        detail="",
+        evidence="",
+        confidence=0.5,
+    )
+    assert reg.add_relationship(rel, "ch0001") is None

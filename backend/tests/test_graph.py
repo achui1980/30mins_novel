@@ -374,24 +374,45 @@ def test_patch_graph_timeline_injects_top_level_keys(tmp_path):
     from app.pipeline.graph import patch_graph_timeline
 
     path = tmp_path / "graph.json"
-    path.write_text(
-        json.dumps({"nodes": [{"id": "n1"}], "edges": []}, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    # 和 graphify to_json 真正写出的顶层键形状一致：built_at_commit / directed /
+    # graph / hyperedges / links / multigraph / nodes（注意是 links，不是 edges）。
+    # 补丁必须是纯增量，所以少写回、改写、或整体替换掉任何一个已有顶层键都必须
+    # 让本测试失败。
+    fixture = {
+        "built_at_commit": "3c60c00",
+        "directed": False,
+        "graph": {"communities": {"0": ["n1"]}, "community_labels": {"0": "甲相关情节线"}},
+        "hyperedges": [],
+        "links": [{"source": "zeta", "target": "alpha", "category": "朋友"}],
+        "multigraph": False,
+        "nodes": [{"id": "n1"}],
+    }
+    path.write_text(json.dumps(fixture, ensure_ascii=False), encoding="utf-8")
     chapters = [{"id": "ch0001", "title": "第一章", "order": 1}]
-    transitions = [
-        {
-            "pair": ["甲", "乙"],
-            "steps": [{"chapter_id": "ch0001", "category": "朋友", "evidence": "同行"}],
-            "confirmed": True,
-        }
+    # steps 已由 evolve.prefilter_candidates 按章序升序排好，Tasks 12/17 直接按这个
+    # 顺序取下标，所以本函数只能原样搬运。故意给两步、且顺序既非字母序也非章号序，
+    # 这样「写死成 []」和「重排/反转」都必须让本测试失败。
+    steps = [
+        {"chapter_id": "ch0009", "category": "敌人", "evidence": "反目"},
+        {"chapter_id": "ch0002", "category": "朋友", "evidence": "同行"},
     ]
+    transitions = [{"pair": ["甲", "乙"], "steps": steps, "confirmed": True}]
 
-    patch_graph_timeline(path, chapters, transitions, {"甲": "jia", "乙": "yi"})
+    # 名字→id 故意映射成**非**排序序（zeta 排在 alpha 前）：pair 的顺序来自
+    # merge.py:197-198 的无向规范序，本函数不得重排，sorted() 必须失败。
+    patch_graph_timeline(path, chapters, transitions, {"甲": "zeta", "乙": "alpha"})
 
     data = json.loads(path.read_text(encoding="utf-8"))
+    # 整体等值：fixture 的每个顶层键原值存活，只多出 chapters / transitions 两个。
+    assert data == {
+        **fixture,
+        "chapters": chapters,
+        "transitions": [{"pair": ["zeta", "alpha"], "steps": steps, "confirmed": True}],
+    }
+    # 逐项断言保留（整体比较已覆盖，留着让失败信息更聚焦）。
     assert data["chapters"] == chapters
-    assert data["transitions"][0]["pair"] == ["jia", "yi"]
+    assert data["transitions"][0]["pair"] == ["zeta", "alpha"]
+    assert data["transitions"][0]["steps"] == steps
     assert data["transitions"][0]["confirmed"] is True
     assert data["nodes"] == [{"id": "n1"}]
 
@@ -402,13 +423,16 @@ def test_patch_graph_timeline_drops_transitions_with_unknown_names(tmp_path):
     from app.pipeline.graph import patch_graph_timeline
 
     path = tmp_path / "graph.json"
-    path.write_text(json.dumps({"nodes": [], "edges": []}), encoding="utf-8")
+    path.write_text(json.dumps({"nodes": [], "links": []}), encoding="utf-8")
     transitions = [{"pair": ["甲", "丙"], "steps": [], "confirmed": False}]
 
     patch_graph_timeline(path, [], transitions, {"甲": "jia"})
 
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["transitions"] == []
+    # chapters 为空也必须写出顶层键：它是前端判断「本作品有没有时间轴数据」的
+    # **唯一**信号，`if chapters:` 那样的省略会静默隐藏整个功能。
+    assert data["chapters"] == []
 
     # pair 长度不是 2 的条目同样静默丢弃：删掉长度保护后，1 元 pair 会
     # IndexError（函数契约是永不抛异常），3 元 pair 会被截成一条假演变。
@@ -426,6 +450,8 @@ def test_patch_graph_timeline_drops_transitions_with_unknown_names(tmp_path):
 
 
 def test_patch_graph_timeline_never_raises_on_bad_file(tmp_path):
+    import json
+
     from app.pipeline.graph import patch_graph_timeline
 
     missing = tmp_path / "nope.json"
@@ -436,3 +462,38 @@ def test_patch_graph_timeline_never_raises_on_bad_file(tmp_path):
     broken.write_text("{not json", encoding="utf-8")
     patch_graph_timeline(broken, [{"id": "ch0001", "title": "x", "order": 1}], [], {})
     assert broken.read_text(encoding="utf-8") == "{not json"
+
+    # 顶层不是 dict：删掉 isinstance(data, dict) 保护后会变成
+    # TypeError: list indices must be integers，把静默 no-op 变成抛异常。
+    array_top = tmp_path / "array.json"
+    array_top.write_text("[1, 2, 3]", encoding="utf-8")
+    patch_graph_timeline(array_top, [{"id": "ch0001", "title": "x", "order": 1}], [], {})
+    assert array_top.read_text(encoding="utf-8") == "[1, 2, 3]"
+
+    # 畸形入参同样不能抛。Task 9 在 building 阶段调用本函数，永不抛异常是硬约束；
+    # detect_transitions 今天只产出规范 dict，所以这些分支是纯防御。
+    ok = tmp_path / "ok.json"
+    ok.write_text(json.dumps({"nodes": [], "links": []}), encoding="utf-8")
+
+    # 条目不是 dict：非 dict 是真值，`(item or {}).get` 保护不住，会 AttributeError。
+    patch_graph_timeline(ok, [], ["x", 123, ["a", "b"], None], {"甲": "jia"})
+    assert json.loads(ok.read_text(encoding="utf-8"))["transitions"] == []
+
+    # pair 元素不是字符串：list 不可 hash，name_to_id.get 会 TypeError。
+    # pair 本身不是列表（整数 / 恰好两字的字符串）也不能穿过去。
+    patch_graph_timeline(
+        ok,
+        [],
+        [
+            {"pair": [["甲"], "乙"]},
+            {"pair": {"甲", "乙"}},
+            {"pair": 2},
+            {"pair": "甲乙"},
+        ],
+        {"甲": "jia", "乙": "yi"},
+    )
+    assert json.loads(ok.read_text(encoding="utf-8"))["transitions"] == []
+
+    # name_to_id 为 None：.get 会 AttributeError。
+    patch_graph_timeline(ok, [], [{"pair": ["甲", "乙"], "steps": [], "confirmed": True}], None)
+    assert json.loads(ok.read_text(encoding="utf-8"))["transitions"] == []

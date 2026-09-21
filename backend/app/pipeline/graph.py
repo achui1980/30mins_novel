@@ -328,8 +328,9 @@ def patch_graph_timeline(
     ``transitions`` 是 ``evolve.detect_transitions`` 的返回值，其 ``pair`` 装的是
     **人物名**而不是节点 id（CJK 名字 slug 成空串后 ``_slug()`` 会退化成
     ``n{salt}``，见 AGENTS.md），所以必须用 ``name_to_id`` 翻译。名字对里任一个
-    翻不出 id、或 ``pair`` 长度不是 2 的条目静默丢弃。``steps`` 已由上游按章序
-    排好、``pair`` 已按 merge.py 的无向规范序排好，这里只原样搬运，不重排。
+    翻不出 id、或形状不合法（条目不是 dict、``pair`` 不是恰好两个字符串）的条目
+    静默丢弃。``steps`` 已由上游按章序排好、``pair`` 已按 merge.py 的无向规范序
+    排好，这里只原样搬运，不重排。
 
     本函数永不抛异常：读不到、解析不了、顶层不是 dict、或写回失败，都保持原文件
     不动并正常返回；前端缺顶层 chapters 键时按「旧版本作品」降级。
@@ -345,9 +346,20 @@ def patch_graph_timeline(
         return
 
     mapped: list[dict] = []
+    name_to_id = name_to_id or {}
     for item in transitions or []:
-        pair = (item or {}).get("pair") or []
+        # 非 dict 的条目是真值，`(item or {})` 保护不住它，会 AttributeError；
+        # pair 不是列表 / 元素不是字符串同样会 TypeError（list / set 不可 hash、
+        # int 不可 len）。永不抛异常是硬约束，所以逐层挡掉。
+        # detect_transitions 今天只产出规范 dict，这些分支实际不该被触发。
+        if not isinstance(item, dict):
+            continue
+        pair = item.get("pair") or []
+        if not isinstance(pair, (list, tuple)):
+            continue
         if len(pair) != 2:
+            continue
+        if not all(isinstance(x, str) for x in pair):
             continue
         src_id = name_to_id.get(pair[0])
         tgt_id = name_to_id.get(pair[1])

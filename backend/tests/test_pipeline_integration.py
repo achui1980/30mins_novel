@@ -113,18 +113,24 @@ def test_pipeline_end_to_end(temp_data_root):
 def test_pipeline_emits_timeline_fields(temp_data_root, monkeypatch):
     """离线跑完整管道，钉住 building 阶段的时间轴接线（design §4.1）。
 
-    这里同时用 spy 钉住三处**没有可观测行为差异**的接线：
-    - `run_graphify(chapter_order=...)`：章 id 是 `ch%04d` 零填充，字典序恰好等于
-      章序，所以去掉 chapter_order 后 graph.json 一字不变；只能在调用处断言。
+    这里用 spy 在**调用处**钉住几处接线，因为它们对 graph.json 没有可观测差异，
+    或其行为本身已在别处的单测里钉过：
+    - `run_graphify(chapter_order=...)`：`build_extraction_json` 的章序行为已由
+      `tests/test_graph.py` 钉住（ch0010 胜 ch0002），编排这一层剩下的义务只是
+      「kwarg 确实传下去了」，那是个调用形状事实。
+    - `warn_cb=on_warn`：`evolve.py` 降级时只通过这个回调把警告送进
+      `status.warnings`，漏传的后果是警告静默消失，产物完全一样。
     - `patch_graph_timeline` 必须跑在 `patch_graph_edge_locations` **之后**：两者都是
       整字典读-改-写，互相保留对方的键，换序后产物同样一字不变。
     """
     from app.pipeline import orchestrator
 
-    # EVOLVE_ENABLED / USE_FAKE_LLM 都可能被环境变量关掉（config 在调用时读模块
-    # 属性，改 env 无效），显式钉住，别让断言依赖 ambient。
+    # 这条是**载荷性**的，不是装饰：EVOLVE_ENABLED 为假时 real_detect 会在
+    # evolve.py:191-192 直接 return []，下面 spy 里对 warn_cb / 真函数返回值的断言
+    # 就再也走不到真正的判定路径。config 在调用时读模块属性，改 env 无效，只能
+    # monkeypatch 模块属性。
+    # （USE_FAKE_LLM 不在这里重复钉 —— temp_data_root fixture 已经钉过了。）
     monkeypatch.setattr(config, "EVOLVE_ENABLED", True)
-    monkeypatch.setattr(config, "USE_FAKE_LLM", True)
 
     calls: list[str] = []
     seen: dict = {}
@@ -134,6 +140,9 @@ def test_pipeline_emits_timeline_fields(temp_data_root, monkeypatch):
     def spy_detect(registry, chapters, **kwargs):
         calls.append("detect_transitions")
         seen["chapters_meta"] = [dict(c) for c in chapters]
+        # 降级警告必须能抵达 status.warnings：evolve.py:220-221 只经由 warn_cb
+        # 上报「关系演变判定失败」，漏传这个 kwarg 后警告静默消失而产物不变。
+        assert kwargs.get("warn_cb") is not None, kwargs
         # 真函数也跑一遍：确认编排传进来的参数形状它确实吃得下（永不抛异常）。
         assert isinstance(real_detect(registry, chapters, **kwargs), list)
         names = sorted(registry.characters)
@@ -243,7 +252,9 @@ def test_pipeline_emits_timeline_fields(temp_data_root, monkeypatch):
     assert any("mentions_by_chapter" in n for n in nodes)
     edges = data.get("links") if data.get("links") is not None else data.get("edges", [])
     assert edges and all("chapters" in e for e in edges)
-    # 换序检查的兜底：edge location 的补写不能被时间轴补写冲掉。
+    # 不是换序检查的兜底（换序在带/不带 transitions 两种情况下都是字节等同的）：
+    # 这条守的是**未来**某个 patch_graph_timeline 从「合并顶层键」退化成「整体覆写」，
+    # 把前一步补好的 source_location 冲掉。
     assert any(e.get("source_location") for e in edges)
 
 

@@ -15,6 +15,10 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           <Route path="/" element={<HomePage />} />
           <Route path="/works/:id/processing" element={<ProcessingPage />} />
           <Route path="/works/:id" element={<ReaderPage />} />
+          {/* Reader views are real URLs now (graph/arcs/timeline/story/raw), so
+              they are shareable, survive a reload and work with the back button.
+              The static `processing` segment above wins over this dynamic one. */}
+          <Route path="/works/:id/:view" element={<ReaderPage />} />
         </Routes>
       </BrowserRouter>
     </ErrorBoundary>

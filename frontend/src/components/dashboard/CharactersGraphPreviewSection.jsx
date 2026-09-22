@@ -55,7 +55,10 @@ export default function CharactersGraphPreviewSection({ id, pkg, onOpenGraph, on
     : [];
 
   return (
-    <section id="sec-characters" className="scroll-mt-16 border-b border-ink-300 py-8">
+    <section
+      id="sec-characters"
+      className="my-8 scroll-mt-[52px] rounded-card border border-ink-200 bg-paper-100 px-5 py-7 md:-mx-4 md:px-8"
+    >
       <div className="flex items-center justify-between">
         <h2 className="font-serif text-lg font-semibold text-ink-900">人物关系</h2>
         <div className="flex items-center gap-3 text-sm">

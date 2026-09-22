@@ -9,6 +9,26 @@ html, body, #root {
   box-sizing: border-box;
 }
 
+/* Keyboard focus ring. Previously nothing overrode the UA default, and several
+   interactive elements were divs with no focus at all. */
+:focus-visible {
+  outline: 2px solid #B33A3A;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }

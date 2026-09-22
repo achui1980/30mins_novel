@@ -34,7 +34,7 @@ export default function AskAI({ id, open, onOpenChange, seed }) {
       <button
         type="button"
         onClick={() => onOpenChange(!open)}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-ink-900 px-4 py-3 text-sm text-white shadow-pop hover:bg-ink-900/90"
+        className="fixed bottom-20 right-4 z-50 flex items-center gap-2 rounded-full bg-ink-900 px-4 py-3 text-sm text-white shadow-pop hover:bg-ink-900/90 md:bottom-6 md:right-6"
       >
         <MessageCircle size={16} strokeWidth={1.5} />
         问AI

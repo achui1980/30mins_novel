@@ -200,7 +200,7 @@ export default function GraphTab({ id, setRight, onViewChapter }) {
       <div
         id="graph"
         ref={containerRef}
-        className="mt-4 h-[560px] rounded-card border border-ink-300 bg-white"
+        className="mt-4 h-[calc(100dvh-230px)] min-h-[420px] rounded-card border border-ink-300 bg-white"
       />
     </div>
   );

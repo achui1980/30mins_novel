@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="zh-CN" class="h-full">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>阅读页布局 mockup · 30分钟读懂一本书</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: { extend: {
+    colors: {
+      paper: { 50:'#FAF6EE', 100:'#F3ECDD', 200:'#EBE2CE' },
+      ink: { 900:'#2B2724', 800:'#3D3833', 700:'#4F4842', 600:'#6B6259',
+             500:'#857B70', 400:'#A69C8E', 300:'#D9D2C4', 200:'#E8E1D3' },
+      seal: { 100:'#F5DEDA', 600:'#B33A3A', 700:'#8F2C2C' },
+      pine: { 100:'#DCE6E1', 600:'#3F5B4E' },
+      amber: { 100:'#F6EAD2', 600:'#C9A15B' },
+      danger: { 600:'#C0392B' },
+      night: { 900:'#1F1C1A', 800:'#2B2724', 700:'#3A342F', 600:'#4F4842' }
+    },
+    fontFamily: {
+      sans: ['"Noto Sans SC"','"PingFang SC"','"Hiragino Sans GB"','Inter','system-ui','sans-serif'],
+      serif: ['"Noto Serif SC"','"Songti SC"','Georgia','serif']
+    },
+    borderRadius: { card:'12px', btn:'8px' },
+    boxShadow: { sm2:'0 1px 2px rgba(43,39,36,.04)', pop:'0 8px 24px rgba(43,39,36,.08)' }
+  }}
+}
+</script>
+<style>
+  *{-webkit-tap-highlight-color:transparent}
+  :focus-visible{outline:2px solid #B33A3A;outline-offset:2px;border-radius:4px}
+  .scrollbar-thin::-webkit-scrollbar{width:6px;height:6px}
+  .scrollbar-thin::-webkit-scrollbar-thumb{background:#D9D2C4;border-radius:99px}
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb{background:#4F4842}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  .prose-cn p{line-height:1.8;margin-bottom:.85em}
+</style>
+</head>
+<body class="h-full font-sans text-[15px] text-ink-900 antialiased dark:text-paper-100">
+<div class="flex h-dvh overflow-hidden bg-paper-50 dark:bg-night-900">
+
+  <!-- ① 书架 200px · lg 以下折叠为抽屉 -->
+  <aside id="shelf" class="z-20 hidden w-[200px] shrink-0 flex-col border-r border-ink-300 bg-paper-100 lg:flex dark:border-night-700 dark:bg-night-800">
+    <div class="flex items-center gap-2 px-4 py-3.5">
+      <svg class="h-4 w-4 text-seal-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 2v8l3-3 3 3V2"/><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/></svg>
+      <span class="font-serif text-sm font-semibold tracking-wide">书架</span>
+      <span class="ml-auto rounded-full bg-paper-200 px-1.5 py-0.5 text-[10px] tabular-nums text-ink-600 dark:bg-night-700 dark:text-ink-300">7</span>
+    </div>
+    <nav class="scrollbar-thin flex-1 overflow-y-auto px-2 pb-2" aria-label="书架">
+      <a href="#" aria-current="page" class="group mb-1 flex cursor-pointer gap-2.5 rounded-btn bg-white px-2 py-2 shadow-sm2 ring-1 ring-seal-600/30 dark:bg-night-700 dark:ring-seal-600/50">
+        <span class="mt-0.5 flex h-9 w-7 shrink-0 items-center justify-center rounded-[3px] bg-seal-600 font-serif text-xs text-white">白</span>
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-[13px] font-medium leading-tight">白夜行</span>
+          <span class="mt-1 block text-[10px] text-ink-500 dark:text-ink-400">东野圭吾 · 已读 34%</span>
+          <span class="mt-1 block h-0.5 w-full rounded bg-paper-200 dark:bg-night-600"><span class="block h-full w-[34%] rounded bg-seal-600"></span></span>
+        </span>
+        <button aria-label="删除《白夜行》" class="h-6 w-6 shrink-0 cursor-pointer rounded opacity-0 transition-opacity hover:bg-seal-100 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-night-600">
+          <svg class="mx-auto h-3.5 w-3.5 text-ink-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
+      </a>
+      <a href="#" class="group mb-1 flex cursor-pointer gap-2.5 rounded-btn px-2 py-2 transition-colors hover:bg-white/70 dark:hover:bg-night-700">
+        <span class="mt-0.5 flex h-9 w-7 shrink-0 items-center justify-center rounded-[3px] bg-pine-600 font-serif text-xs text-white">嫌</span>
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-[13px] leading-tight">嫌疑人X的献身</span>
+          <span class="mt-1 block text-[10px] text-ink-500 dark:text-ink-400">东野圭吾 · 未开始</span>
+        </span>
+      </a>
+      <a href="#" class="group mb-1 flex cursor-pointer gap-2.5 rounded-btn px-2 py-2 transition-colors hover:bg-white/70 dark:hover:bg-night-700">
+        <span class="mt-0.5 flex h-9 w-7 shrink-0 items-center justify-center rounded-[3px] bg-amber-600 font-serif text-xs text-white">活</span>
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-[13px] leading-tight">活着</span>
+          <span class="mt-1 block text-[10px] text-ink-500 dark:text-ink-400">余华 · 已读 100%</span>
+        </span>
+      </a>
+      <a href="#" class="group mb-1 flex cursor-pointer gap-2.5 rounded-btn px-2 py-2 transition-colors hover:bg-white/70 dark:hover:bg-night-700">
+        <span class="mt-0.5 flex h-9 w-7 shrink-0 items-center justify-center rounded-[3px] bg-ink-400 font-serif text-xs text-white">三</span>
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-[13px] leading-tight">三体</span>
+          <span class="mt-1 flex items-center gap-1 text-[10px] text-ink-600 dark:text-ink-400">
+            <span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-600"></span>抽取实体与关系 62%
+          </span>
+        </span>
+      </a>
+      <a href="#" class="group flex cursor-pointer gap-2.5 rounded-btn px-2 py-2 transition-colors hover:bg-white/70 dark:hover:bg-night-700">
+        <span class="mt-0.5 flex h-9 w-7 shrink-0 items-center justify-center rounded-[3px] bg-paper-200 font-serif text-xs text-ink-500 dark:bg-night-600">红</span>
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-[13px] leading-tight">红楼梦</span>
+          <span class="mt-1 flex items-center gap-1 text-[10px] text-danger-600">
+            <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>失败 · 重试
+          </span>
+        </span>
+      </a>
+    </nav>
+    <div class="border-t border-ink-300 p-2 dark:border-night-700">
+      <button class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-btn border border-dashed border-ink-300 py-2 text-xs text-ink-600 transition-colors hover:border-seal-600 hover:text-seal-600 dark:border-night-600 dark:text-ink-400">
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg>上传新书
+      </button>
+    </div>
+  </aside>
+
+  <!-- ② 视图切换器 76px · 常驻，md 以下变底部 tab bar -->
+  <nav id="rail" class="z-20 hidden w-[76px] shrink-0 flex-col items-center gap-1 border-r border-ink-300 bg-paper-50 py-3 md:flex dark:border-night-700 dark:bg-night-900" aria-label="视图切换">
+    <button data-goto="overview" class="flex w-[60px] cursor-pointer flex-col items-center gap-1 rounded-btn py-2 text-[11px] text-ink-600 transition-colors hover:bg-paper-100 dark:hover:bg-night-800">
+      <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>全景
+    </button>
+    <button data-goto="graph" class="flex w-[60px] cursor-pointer flex-col items-center gap-1 rounded-btn py-2 text-[11px] text-ink-600 transition-colors hover:bg-paper-100 dark:hover:bg-night-800">
+      <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 5"/></svg>图谱
+    </button>
+    <button data-goto="soon" class="flex w-[60px] cursor-pointer flex-col items-center gap-1 rounded-btn py-2 text-[11px] text-ink-600 transition-colors hover:bg-paper-100 dark:hover:bg-night-800">
+      <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>情节
+    </button>
+    <button data-goto="soon" class="flex w-[60px] cursor-pointer flex-col items-center gap-1 rounded-btn py-2 text-[11px] text-ink-600 transition-colors hover:bg-paper-100 dark:hover:bg-night-800">
+      <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>时间
+    </button>
+    <button data-goto="soon" class="flex w-[60px] cursor-pointer flex-col items-center gap-1 rounded-btn py-2 text-[11px] text-ink-600 transition-colors hover:bg-paper-100 dark:hover:bg-night-800">
+      <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18M17 3v18M3 12h18M3 7.5h4M3 16.5h4M17 7.5h4M17 16.5h4"/></svg>故事
+    </button>
+    <div class="my-1 h-px w-8 bg-ink-300 dark:bg-night-700"></div>
+    <button data-goto="raw" class="flex w-[60px] cursor-pointer flex-col items-center gap-1 rounded-btn py-2 text-[11px] text-ink-600 transition-colors hover:bg-paper-100 dark:hover:bg-night-800">
+      <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>原文
+    </button>
+    <button id="themeBtn" aria-label="切换日间／夜间模式" class="mt-auto flex w-[60px] cursor-pointer flex-col items-center gap-1 rounded-btn py-2 text-[11px] text-ink-600 transition-colors hover:bg-paper-100 dark:hover:bg-night-800">
+      <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>夜间
+    </button>
+    <button aria-label="阅读设置" class="flex w-[60px] cursor-pointer flex-col items-center gap-1 rounded-btn py-2 text-[11px] text-ink-600 transition-colors hover:bg-paper-100 dark:hover:bg-night-800">
+      <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6 1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.37.43.68.79.87"/></svg>设置
+    </button>
+  </nav>
+
+  <!-- ③ 内容区 -->
+  <main id="main" class="scrollbar-thin relative flex-1 overflow-y-auto pb-16 md:pb-0">
+    <!-- ===== 视图：全景 ===== -->
+    <div data-view="overview">
+      <!-- Hero：整幅底色带，视觉重心 -->
+      <header class="border-b border-ink-300 bg-paper-100 dark:border-night-700 dark:bg-night-800">
+        <div class="mx-auto flex max-w-[72ch] gap-6 px-5 py-10 md:px-8 md:py-14">
+          <div class="hidden shrink-0 sm:block">
+            <div class="flex h-[132px] w-[92px] flex-col justify-between rounded-[4px] bg-seal-600 p-3 shadow-pop">
+              <span class="font-serif text-2xl leading-none text-white/95">白</span>
+              <span class="font-serif text-[10px] leading-tight text-white/70">东野圭吾</span>
+            </div>
+          </div>
+          <div class="min-w-0">
+            <p class="flex items-center gap-1.5 text-[11px] font-medium tracking-[.12em] text-seal-600">
+              <span class="h-px w-4 bg-seal-600"></span>30 分钟读懂一本书
+            </p>
+            <h1 class="mt-2 font-serif text-[clamp(28px,4vw,40px)] font-bold leading-[1.15]">白夜行</h1>
+            <p class="mt-3 font-serif text-lg leading-relaxed text-ink-800 dark:text-paper-200">
+              两个孩子在一桩凶杀案后结成共犯，用一生互相照亮，也互相拖入深渊。
+            </p>
+            <p class="mt-2 text-sm leading-relaxed text-ink-600 dark:text-ink-400">
+              十九年前的当铺凶案没有真凶，只有两个决定用一辈子替对方掩埋真相的少年。
+            </p>
+            <div class="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-ink-600 dark:text-ink-400">
+              <span class="flex items-center gap-1.5"><svg class="h-3.5 w-3.5 text-ink-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>共 13 章 · 42.8 万字</span>
+              <span class="flex items-center gap-1.5"><svg class="h-3.5 w-3.5 text-ink-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>全景阅读约 28 分钟</span>
+              <span class="flex items-center gap-1.5"><svg class="h-3.5 w-3.5 text-seal-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>读到第 5 章 · 34%</span>
+            </div>
+            <div class="mt-6 flex flex-wrap items-center gap-3">
+              <button class="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-btn bg-seal-600 px-5 text-sm font-medium text-white shadow-sm2 transition-colors hover:bg-seal-700">
+                继续读第 5 章
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </button>
+              <button data-goto="graph" class="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-btn border border-ink-300 px-4 text-sm text-ink-700 transition-colors hover:border-ink-900 hover:text-ink-900 dark:border-night-600 dark:text-ink-300">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 5"/></svg>看人物图谱
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- AnchorNav：6 项齐全，scroll-mt 与实高对齐 -->
+      <div class="sticky top-0 z-10 border-b border-ink-300 bg-paper-50/90 backdrop-blur dark:border-night-700 dark:bg-night-900/90">
+        <nav class="scrollbar-thin mx-auto flex max-w-[72ch] gap-1.5 overflow-x-auto px-5 py-2.5 md:px-8" aria-label="页内导航">
+          <a href="#s-plot" class="shrink-0 cursor-pointer rounded-full bg-ink-900 px-3 py-1.5 text-xs text-white dark:bg-paper-100 dark:text-ink-900">故事梗概</a>
+          <a href="#s-ask" class="shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-xs text-ink-600 transition-colors hover:bg-paper-200 dark:text-ink-400 dark:hover:bg-night-700">带着问题读</a>
+          <a href="#s-char" class="shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-xs text-ink-600 transition-colors hover:bg-paper-200 dark:text-ink-400 dark:hover:bg-night-700">人物关系</a>
+          <a href="#s-arc" class="shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-xs text-ink-600 transition-colors hover:bg-paper-200 dark:text-ink-400 dark:hover:bg-night-700">情节线</a>
+          <a href="#s-time" class="shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-xs text-ink-600 transition-colors hover:bg-paper-200 dark:text-ink-400 dark:hover:bg-night-700">时间轴</a>
+          <a href="#s-set" class="shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-xs text-ink-600 transition-colors hover:bg-paper-200 dark:text-ink-400 dark:hover:bg-night-700">世界观设定</a>
+        </nav>
+      </div>
+
+      <div class="mx-auto max-w-[72ch] px-5 md:px-8">
+        <!-- 故事梗概：拆四段做 2×2 -->
+        <section id="s-plot" class="scroll-mt-[52px] py-10">
+          <h2 class="font-serif text-xl font-semibold">故事梗概</h2>
+          <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">四幕拆解 · 含关键情节，怕剧透可跳到「带着问题读」</p>
+          <div class="mt-5 grid gap-3 sm:grid-cols-2">
+            <article class="rounded-card border border-ink-200 bg-white p-4 dark:border-night-700 dark:bg-night-800">
+              <p class="flex items-center gap-2 text-[11px] font-medium tracking-wider text-pine-600"><span class="flex h-5 w-5 items-center justify-center rounded-full bg-pine-100 font-serif text-[10px] dark:bg-pine-600/25">一</span>起因</p>
+              <p class="mt-2 text-sm leading-relaxed text-ink-700 dark:text-ink-300">当铺老板桐原洋介被杀，警方锁定不了真凶。少年桐原亮司与少女西本雪穗各自握着对方最深的秘密。</p>
+            </article>
+            <article class="rounded-card border border-ink-200 bg-white p-4 dark:border-night-700 dark:bg-night-800">
+              <p class="flex items-center gap-2 text-[11px] font-medium tracking-wider text-amber-600"><span class="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 font-serif text-[10px] dark:bg-amber-600/25">二</span>发展</p>
+              <p class="mt-2 text-sm leading-relaxed text-ink-700 dark:text-ink-300">雪穗被唐泽礼子收养，一步步走进上流社会；亮司隐入黑暗，替她清除每一个障碍。两人再未同行。</p>
+            </article>
+            <article class="rounded-card border border-ink-200 bg-white p-4 dark:border-night-700 dark:bg-night-800">
+              <p class="flex items-center gap-2 text-[11px] font-medium tracking-wider text-seal-600"><span class="flex h-5 w-5 items-center justify-center rounded-full bg-seal-100 font-serif text-[10px] dark:bg-seal-600/25">三</span>高潮</p>
+              <p class="mt-2 text-sm leading-relaxed text-ink-700 dark:text-ink-300">退休刑警笹垣润三十九年不肯放手，筱塚一成也开始怀疑未婚妻。包围圈同时收紧。</p>
+            </article>
+            <article class="rounded-card border border-ink-200 bg-white p-4 dark:border-night-700 dark:bg-night-800">
+              <p class="flex items-center gap-2 text-[11px] font-medium tracking-wider text-ink-600"><span class="flex h-5 w-5 items-center justify-center rounded-full bg-paper-200 font-serif text-[10px] dark:bg-night-700">四</span>结局</p>
+              <p class="mt-2 text-sm leading-relaxed text-ink-700 dark:text-ink-300">亮司在雪穗店门前自尽，用最后一次牺牲替她关上真相的门。她始终没有回头。</p>
+            </article>
+          </div>
+        </section>
+
+        <!-- 带着问题读 -->
+        <section id="s-ask" class="scroll-mt-[52px] border-t border-ink-200 py-10 dark:border-night-700">
+          <h2 class="font-serif text-xl font-semibold">带着问题读</h2>
+          <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">点一个问题，AI 会带原文出处回答</p>
+          <div class="mt-4 space-y-2">
+            <button class="group flex w-full cursor-pointer items-center gap-3 rounded-btn border border-ink-200 bg-white px-4 py-3 text-left text-sm transition-colors hover:border-seal-600 dark:border-night-700 dark:bg-night-800">
+              <svg class="h-4 w-4 shrink-0 text-ink-400 transition-colors group-hover:text-seal-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></svg>
+              <span class="flex-1">亮司为什么甘愿一生只做雪穗的影子？</span>
+              <svg class="h-4 w-4 shrink-0 text-ink-300 transition-transform group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+            <button class="group flex w-full cursor-pointer items-center gap-3 rounded-btn border border-ink-200 bg-white px-4 py-3 text-left text-sm transition-colors hover:border-seal-600 dark:border-night-700 dark:bg-night-800">
+              <svg class="h-4 w-4 shrink-0 text-ink-400 transition-colors group-hover:text-seal-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></svg>
+              <span class="flex-1">笹垣润三凭什么在毫无证据时就认定了雪穗？</span>
+              <svg class="h-4 w-4 shrink-0 text-ink-300 transition-transform group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+            <button class="group flex w-full cursor-pointer items-center gap-3 rounded-btn border border-ink-200 bg-white px-4 py-3 text-left text-sm transition-colors hover:border-seal-600 dark:border-night-700 dark:bg-night-800">
+              <svg class="h-4 w-4 shrink-0 text-ink-400 transition-colors group-hover:text-seal-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></svg>
+              <span class="flex-1">「白夜」在书里到底指什么？</span>
+              <svg class="h-4 w-4 shrink-0 text-ink-300 transition-transform group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+        </section>
+        <!-- 人物关系：产品最独特的部分 → 给整幅底色 + 最大留白 -->
+        <section id="s-char" class="scroll-mt-[52px] border-t border-ink-200 py-10 dark:border-night-700">
+          <div class="flex items-end justify-between gap-4">
+            <div>
+              <h2 class="font-serif text-xl font-semibold">人物关系</h2>
+              <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">28 个人物 · 63 条关系 · 8 类</p>
+            </div>
+            <button data-goto="graph" class="flex shrink-0 cursor-pointer items-center gap-1 text-xs text-seal-600 hover:underline">展开完整图谱
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+          <div class="mt-4 overflow-hidden rounded-card border border-ink-200 bg-paper-100 dark:border-night-700 dark:bg-night-800">
+            <svg viewBox="0 0 640 290" class="h-auto w-full" role="img" aria-label="核心人物关系预览图">
+              <g stroke-linecap="round" fill="none">
+                <path d="M150 95 L300 150" stroke="#3F7A6B" stroke-width="5"/>
+                <path d="M300 150 L110 215" stroke="#3F5B4E" stroke-width="2.5"/>
+                <path d="M300 150 L480 205" stroke="#B33A3A" stroke-width="3"/>
+                <path d="M300 150 L205 235" stroke="#C9A15B" stroke-width="2"/>
+                <path d="M500 90 L150 95" stroke="#6B2E2E" stroke-width="2.5"/>
+                <path d="M500 90 L300 150" stroke="#6B2E2E" stroke-width="2" stroke-dasharray="5 5"/>
+                <path d="M205 235 L480 205" stroke="#C9A15B" stroke-width="1.5"/>
+              </g>
+              <g font-size="12" font-weight="500" text-anchor="middle">
+                <circle cx="300" cy="150" r="30" fill="#B33A3A"/><text x="300" y="154" fill="#fff" font-size="13">西本雪穗</text>
+                <circle cx="150" cy="95" r="27" fill="#2B2724"/><text x="150" y="99" fill="#fff">桐原亮司</text>
+                <circle cx="500" cy="90" r="22" fill="#6B2E2E"/><text x="500" y="94" fill="#fff" font-size="11">笹垣润三</text>
+                <circle cx="480" cy="205" r="21" fill="#4A6FA5"/><text x="480" y="209" fill="#fff" font-size="11">筱塚一成</text>
+                <circle cx="205" cy="235" r="19" fill="#C9A15B"/><text x="205" y="239" fill="#fff" font-size="10">川岛江利子</text>
+                <circle cx="110" cy="215" r="18" fill="#3F5B4E"/><text x="110" y="219" fill="#fff" font-size="10">唐泽礼子</text>
+              </g>
+            </svg>
+            <div class="flex flex-wrap gap-x-3 gap-y-1.5 border-t border-ink-200 px-4 py-3 text-[11px] text-ink-600 dark:border-night-700 dark:text-ink-400">
+              <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#3F5B4E"></i>家人</span>
+              <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#B33A3A"></i>爱人</span>
+              <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#C9A15B"></i>朋友</span>
+              <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#6B2E2E"></i>敌人</span>
+              <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#4A6FA5"></i>师徒</span>
+              <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#7B6D8D"></i>主仆</span>
+              <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#3F7A6B"></i>同盟</span>
+              <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#8C8478"></i>其他</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 情节线：横向卡片流 -->
+        <section id="s-arc" class="scroll-mt-[52px] border-t border-ink-200 py-10 dark:border-night-700">
+          <div class="flex items-end justify-between gap-4">
+            <div><h2 class="font-serif text-xl font-semibold">情节线</h2>
+              <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">4 条弧 · 横向滑动</p></div>
+            <button data-goto="soon" class="shrink-0 cursor-pointer text-xs text-seal-600 hover:underline">查看全部 →</button>
+          </div>
+          <div class="scrollbar-thin -mx-5 mt-4 flex snap-x gap-3 overflow-x-auto px-5 pb-2 md:-mx-8 md:px-8">
+            <article class="w-[230px] shrink-0 snap-start rounded-card border-l-[3px] border-l-seal-600 bg-white p-4 shadow-sm2 ring-1 ring-ink-200 dark:bg-night-800 dark:ring-night-700">
+              <p class="text-[10px] tracking-wider text-ink-400">第 1–3 章</p>
+              <h3 class="mt-1 font-serif text-sm font-semibold">当铺凶案</h3>
+              <p class="mt-2 text-xs leading-relaxed text-ink-600 dark:text-ink-400">桐原洋介之死，两个孩子结成共犯。</p>
+              <p class="mt-3 flex items-center gap-1 text-[10px] text-ink-400"><svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M17 11a4 4 0 1 0 0-8M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2m6 0v-2a4 4 0 0 0-3-3.87"/></svg>亮司 · 雪穗 · 笹垣</p>
+            </article>
+            <article class="w-[230px] shrink-0 snap-start rounded-card border-l-[3px] border-l-amber-600 bg-white p-4 shadow-sm2 ring-1 ring-ink-200 dark:bg-night-800 dark:ring-night-700">
+              <p class="text-[10px] tracking-wider text-ink-400">第 4–7 章</p>
+              <h3 class="mt-1 font-serif text-sm font-semibold">被收养的少女</h3>
+              <p class="mt-2 text-xs leading-relaxed text-ink-600 dark:text-ink-400">雪穗改名换姓，学琴、升学、进入上流社会。</p>
+              <p class="mt-3 flex items-center gap-1 text-[10px] text-ink-400"><svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M17 11a4 4 0 1 0 0-8M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2m6 0v-2a4 4 0 0 0-3-3.87"/></svg>雪穗 · 礼子 · 江利子</p>
+            </article>
+            <article class="w-[230px] shrink-0 snap-start rounded-card border-l-[3px] border-l-pine-600 bg-white p-4 shadow-sm2 ring-1 ring-ink-200 dark:bg-night-800 dark:ring-night-700">
+              <p class="text-[10px] tracking-wider text-ink-400">第 8–11 章</p>
+              <h3 class="mt-1 font-serif text-sm font-semibold">影子清道夫</h3>
+              <p class="mt-2 text-xs leading-relaxed text-ink-600 dark:text-ink-400">亮司在暗处一次次替她抹去障碍。</p>
+              <p class="mt-3 flex items-center gap-1 text-[10px] text-ink-400"><svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M17 11a4 4 0 1 0 0-8M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2m6 0v-2a4 4 0 0 0-3-3.87"/></svg>亮司 · 典子</p>
+            </article>
+            <article class="w-[230px] shrink-0 snap-start rounded-card border-l-[3px] border-l-ink-900 bg-white p-4 shadow-sm2 ring-1 ring-ink-200 dark:bg-night-800 dark:ring-night-700">
+              <p class="text-[10px] tracking-wider text-ink-400">第 12–13 章</p>
+              <h3 class="mt-1 font-serif text-sm font-semibold">白夜尽头</h3>
+              <p class="mt-2 text-xs leading-relaxed text-ink-600 dark:text-ink-400">包围圈收紧，亮司做出最后的选择。</p>
+              <p class="mt-3 flex items-center gap-1 text-[10px] text-ink-400"><svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M17 11a4 4 0 1 0 0-8M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2m6 0v-2a4 4 0 0 0-3-3.87"/></svg>全员</p>
+            </article>
+          </div>
+        </section>
+
+        <!-- 时间轴 -->
+        <section id="s-time" class="scroll-mt-[52px] border-t border-ink-200 py-10 dark:border-night-700">
+          <div class="flex items-end justify-between gap-4">
+            <div><h2 class="font-serif text-xl font-semibold">时间轴</h2>
+              <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">42 个事件 · 显示前 4 个</p></div>
+            <button data-goto="soon" class="shrink-0 cursor-pointer text-xs text-seal-600 hover:underline">查看全部 →</button>
+          </div>
+          <ol class="mt-5 border-l border-ink-300 dark:border-night-600">
+            <li class="relative pb-6 pl-5">
+              <span class="absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full bg-seal-600 ring-4 ring-paper-50 dark:ring-night-900"></span>
+              <p class="text-[10px] tracking-wider text-ink-400">第 1 章</p>
+              <p class="mt-0.5 text-sm">雪穗与亮司在废弃大楼的通风管道里相遇</p>
+            </li>
+            <li class="relative pb-6 pl-5">
+              <span class="absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full bg-ink-400 ring-4 ring-paper-50 dark:ring-night-900"></span>
+              <p class="text-[10px] tracking-wider text-ink-400">第 2 章</p>
+              <p class="mt-0.5 text-sm">桐原洋介被发现死于当铺，警方无从下手</p>
+            </li>
+            <li class="relative pb-6 pl-5">
+              <span class="absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full bg-ink-400 ring-4 ring-paper-50 dark:ring-night-900"></span>
+              <p class="text-[10px] tracking-wider text-ink-400">第 4 章</p>
+              <p class="mt-0.5 text-sm">唐泽礼子收养雪穗，她从此有了新名字</p>
+            </li>
+            <li class="relative pl-5">
+              <span class="absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full bg-ink-400 ring-4 ring-paper-50 dark:ring-night-900"></span>
+              <p class="text-[10px] tracking-wider text-ink-400">第 5 章 · 你在这里</p>
+              <p class="mt-0.5 text-sm">江利子把男友介绍给雪穗，命运的岔口</p>
+            </li>
+          </ol>
+        </section>
+
+        <!-- 世界观设定 -->
+        <section id="s-set" class="scroll-mt-[52px] border-t border-ink-200 py-10 dark:border-night-700">
+          <h2 class="font-serif text-xl font-semibold">世界观设定</h2>
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <div class="rounded-card bg-paper-100 p-4 dark:bg-night-800">
+              <p class="text-[10px] tracking-wider text-ink-400">地点</p>
+              <h3 class="mt-1 font-serif text-sm font-semibold">大阪 · 布施</h3>
+              <p class="mt-2 text-xs leading-relaxed text-ink-600 dark:text-ink-400">故事起点。当铺、废弃大楼、贫困的街区。</p>
+            </div>
+            <div class="rounded-card bg-paper-100 p-4 dark:bg-night-800">
+              <p class="text-[10px] tracking-wider text-ink-400">意象</p>
+              <h3 class="mt-1 font-serif text-sm font-semibold">白夜</h3>
+              <p class="mt-2 text-xs leading-relaxed text-ink-600 dark:text-ink-400">没有太阳，却也不是纯粹的黑夜——两人一生的处境。</p>
+            </div>
+            <div class="rounded-card bg-paper-100 p-4 dark:bg-night-800">
+              <p class="text-[10px] tracking-wider text-ink-400">时代</p>
+              <h3 class="mt-1 font-serif text-sm font-semibold">1973–1992 昭和末至平成初</h3>
+              <p class="mt-2 text-xs leading-relaxed text-ink-600 dark:text-ink-400">日本经济起飞与泡沫，横跨十九年。</p>
+            </div>
+            <div class="rounded-card bg-paper-100 p-4 dark:bg-night-800">
+              <p class="text-[10px] tracking-wider text-ink-400">线索物</p>
+              <h3 class="mt-1 font-serif text-sm font-semibold">《飘》</h3>
+              <p class="mt-2 text-xs leading-relaxed text-ink-600 dark:text-ink-400">雪穗反复提到的书，贯穿全篇的暗号。</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <!-- ===== 视图：人物图谱（画布铺满，不再是全屏遮罩） ===== -->
+    <div data-view="graph" class="flex h-full flex-col">
+      <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-ink-300 px-5 py-2.5 md:px-8 dark:border-night-700">
+        <h1 class="font-serif text-base font-semibold">人物关系图谱</h1>
+        <span class="text-xs text-ink-500 dark:text-ink-400">28 人 · 63 关系</span>
+        <label class="ml-auto flex cursor-pointer items-center gap-1.5 text-xs text-ink-600 dark:text-ink-400">
+          <input type="checkbox" class="h-3.5 w-3.5 cursor-pointer accent-seal-600">显示全部地点
+        </label>
+        <label class="flex cursor-pointer items-center gap-1.5 text-xs text-ink-600 dark:text-ink-400">
+          <input type="checkbox" checked class="h-3.5 w-3.5 cursor-pointer accent-seal-600">仅核心人物
+        </label>
+      </div>
+      <div class="relative min-h-0 flex-1 bg-paper-100 dark:bg-night-800">
+        <svg viewBox="0 0 900 560" class="h-full w-full" role="img" aria-label="人物关系图谱">
+          <g stroke-linecap="round" fill="none">
+            <path d="M250 180 L450 290" stroke="#3F7A6B" stroke-width="6"/>
+            <path d="M450 290 L200 400" stroke="#3F5B4E" stroke-width="3"/>
+            <path d="M450 290 L700 390" stroke="#B33A3A" stroke-width="4"/>
+            <path d="M450 290 L330 460" stroke="#C9A15B" stroke-width="2.5"/>
+            <path d="M720 150 L250 180" stroke="#6B2E2E" stroke-width="3"/>
+            <path d="M720 150 L450 290" stroke="#6B2E2E" stroke-width="2.5" stroke-dasharray="6 6"/>
+            <path d="M330 460 L700 390" stroke="#C9A15B" stroke-width="2"/>
+            <path d="M250 180 L140 110" stroke="#7B6D8D" stroke-width="2.5"/>
+            <path d="M700 390 L820 470" stroke="#3F5B4E" stroke-width="2"/>
+            <path d="M720 150 L840 240" stroke="#4A6FA5" stroke-width="2.5"/>
+          </g>
+          <g text-anchor="middle" font-weight="500">
+            <circle cx="450" cy="290" r="42" fill="#B33A3A"/><text x="450" y="295" fill="#fff" font-size="15">西本雪穗</text>
+            <circle cx="250" cy="180" r="38" fill="#2B2724"/><text x="250" y="185" fill="#fff" font-size="14">桐原亮司</text>
+            <circle cx="720" cy="150" r="30" fill="#6B2E2E"/><text x="720" y="155" fill="#fff" font-size="12">笹垣润三</text>
+            <circle cx="700" cy="390" r="28" fill="#4A6FA5"/><text x="700" y="395" fill="#fff" font-size="12">筱塚一成</text>
+            <circle cx="330" cy="460" r="25" fill="#C9A15B"/><text x="330" y="465" fill="#fff" font-size="11">川岛江利子</text>
+            <circle cx="200" cy="400" r="24" fill="#3F5B4E"/><text x="200" y="405" fill="#fff" font-size="11">唐泽礼子</text>
+            <circle cx="140" cy="110" r="20" fill="#7B6D8D"/><text x="140" y="115" fill="#fff" font-size="10">桐原洋介</text>
+            <circle cx="840" cy="240" r="19" fill="#8C8478"/><text x="840" y="245" fill="#fff" font-size="10">今枝直巳</text>
+            <circle cx="820" cy="470" r="18" fill="#3F5B4E"/><text x="820" y="475" fill="#fff" font-size="10">筱塚康晴</text>
+          </g>
+        </svg>
+        <div class="absolute bottom-3 left-3 flex flex-wrap gap-x-3 gap-y-1 rounded-btn bg-white/90 px-3 py-2 text-[11px] text-ink-600 shadow-sm2 backdrop-blur dark:bg-night-900/90 dark:text-ink-400">
+          <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#3F5B4E"></i>家人</span>
+          <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#B33A3A"></i>爱人</span>
+          <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#C9A15B"></i>朋友</span>
+          <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#6B2E2E"></i>敌人</span>
+          <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#4A6FA5"></i>师徒</span>
+          <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#7B6D8D"></i>主仆</span>
+          <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" style="background:#3F7A6B"></i>同盟</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 视图：原文（68ch 阅读列，右栏保留章节目录） ===== -->
+    <div data-view="raw">
+      <div class="sticky top-0 z-10 border-b border-ink-300 bg-paper-50/90 backdrop-blur dark:border-night-700 dark:bg-night-900/90">
+        <div class="mx-auto flex max-w-[68ch] items-center gap-3 px-5 py-2.5 md:px-8">
+          <span class="font-serif text-sm font-semibold">第 5 章</span>
+          <span class="truncate text-xs text-ink-500 dark:text-ink-400">江利子的男友</span>
+          <span class="ml-auto shrink-0 text-[11px] tabular-nums text-ink-500 dark:text-ink-400">34%</span>
+        </div>
+        <div class="h-0.5 bg-paper-200 dark:bg-night-700"><div class="h-full w-[34%] bg-seal-600"></div></div>
+      </div>
+      <article class="prose-cn mx-auto max-w-[68ch] px-5 py-10 font-serif text-[17px] text-ink-900 md:px-8 dark:text-paper-100">
+        <p>雪穗把茶杯放回托盘时，指尖没有一丝抖动。<mark class="rounded bg-amber-100 px-0.5 dark:bg-amber-600/30 dark:text-paper-100">江利子</mark>坐在对面，正低头讲着那个男人的事，语气里有一种自己都没察觉的雀跃。</p>
+        <p>「他叫<mark class="rounded bg-amber-100 px-0.5 dark:bg-amber-600/30 dark:text-paper-100">筱塚一成</mark>，是药业公司的人。」江利子说，「下次一起吃饭吧，我想让他见见你。」</p>
+        <p>窗外的樱花已经谢了大半。雪穗笑着点头，笑意停在脸上恰到好处的位置，既不多也不少。</p>
+        <p>那天晚上她给<mark class="rounded bg-amber-100 px-0.5 dark:bg-amber-600/30 dark:text-paper-100">亮司</mark>打了电话。电话只响了一声就被接起，像对面的人一直守在那里。她什么都没说，他也什么都没问。</p>
+        <p>「明天。」她只说了这两个字。</p>
+        <p>听筒那头传来一声极轻的应答，然后是挂断的声音。她握着话筒站了很久，直到听见走廊尽头养母翻身的动静，才轻轻把它放回原处。</p>
+      </article>
+    </div>
+
+    <!-- ===== 占位视图 ===== -->
+    <div data-view="soon" class="flex h-full items-center justify-center px-8">
+      <p class="text-center text-sm text-ink-500 dark:text-ink-400">情节线 / 时间轴 / 故事正片<br><span class="text-xs">同一套三栏骨架，只换中间内容 —— mockup 未展开</span></p>
+    </div>
+  </main>
+
+  <!-- ④ 上下文栏 300px · xl 以下折叠 -->
+  <aside id="ctx" class="z-20 hidden w-[300px] shrink-0 flex-col border-l border-ink-300 bg-paper-100 xl:flex dark:border-night-700 dark:bg-night-800">
+    <!-- 上下文栏 · 全景视图：章节目录 + 进度 -->
+    <div data-view="overview" class="flex min-h-0 flex-1 flex-col">
+      <div class="border-b border-ink-300 px-4 py-3 dark:border-night-700">
+        <p class="text-[11px] font-medium tracking-wider text-ink-500 dark:text-ink-400">阅读进度</p>
+        <div class="mt-2 flex items-baseline gap-1"><span class="font-serif text-2xl font-semibold tabular-nums">34</span><span class="text-xs text-ink-500">%</span>
+          <span class="ml-auto text-[11px] text-ink-500 dark:text-ink-400">还需约 19 分钟</span></div>
+        <div class="mt-2 h-1 rounded-full bg-paper-200 dark:bg-night-600"><div class="h-full w-[34%] rounded-full bg-seal-600"></div></div>
+      </div>
+      <div class="flex items-center gap-2 px-4 py-2.5">
+        <p class="text-[11px] font-medium tracking-wider text-ink-500 dark:text-ink-400">章节目录</p>
+        <span class="text-[10px] text-ink-400">13 章</span>
+      </div>
+      <nav class="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-2 pb-4" aria-label="章节目录">
+        <a href="#" class="flex cursor-pointer gap-2 rounded-btn px-2 py-1.5 text-xs text-ink-600 transition-colors hover:bg-white/70 dark:text-ink-400 dark:hover:bg-night-700"><span class="w-4 shrink-0 tabular-nums text-ink-400">1</span><span class="truncate">通风管道里的孩子</span></a>
+        <a href="#" class="flex cursor-pointer gap-2 rounded-btn px-2 py-1.5 text-xs text-ink-600 transition-colors hover:bg-white/70 dark:text-ink-400 dark:hover:bg-night-700"><span class="w-4 shrink-0 tabular-nums text-ink-400">2</span><span class="truncate">当铺里的尸体</span></a>
+        <a href="#" class="flex cursor-pointer gap-2 rounded-btn px-2 py-1.5 text-xs text-ink-600 transition-colors hover:bg-white/70 dark:text-ink-400 dark:hover:bg-night-700"><span class="w-4 shrink-0 tabular-nums text-ink-400">3</span><span class="truncate">无法结案的夏天</span></a>
+        <a href="#" class="flex cursor-pointer gap-2 rounded-btn px-2 py-1.5 text-xs text-ink-600 transition-colors hover:bg-white/70 dark:text-ink-400 dark:hover:bg-night-700"><span class="w-4 shrink-0 tabular-nums text-ink-400">4</span><span class="truncate">新的名字</span></a>
+        <a href="#" aria-current="true" class="flex cursor-pointer gap-2 rounded-btn bg-white px-2 py-1.5 text-xs font-medium text-seal-600 shadow-sm2 dark:bg-night-700"><span class="w-4 shrink-0 tabular-nums">5</span><span class="truncate">江利子的男友</span></a>
+        <a href="#" class="flex cursor-pointer gap-2 rounded-btn px-2 py-1.5 text-xs text-ink-600 transition-colors hover:bg-white/70 dark:text-ink-400 dark:hover:bg-night-700"><span class="w-4 shrink-0 tabular-nums text-ink-400">6</span><span class="truncate">剪刀</span></a>
+        <a href="#" class="flex cursor-pointer gap-2 rounded-btn px-2 py-1.5 text-xs text-ink-600 transition-colors hover:bg-white/70 dark:text-ink-400 dark:hover:bg-night-700"><span class="w-4 shrink-0 tabular-nums text-ink-400">7</span><span class="truncate">婚约</span></a>
+        <a href="#" class="flex cursor-pointer gap-2 rounded-btn px-2 py-1.5 text-xs text-ink-600 transition-colors hover:bg-white/70 dark:text-ink-400 dark:hover:bg-night-700"><span class="w-4 shrink-0 tabular-nums text-ink-400">8</span><span class="truncate">影子的工作</span></a>
+        <a href="#" class="flex cursor-pointer gap-2 rounded-btn px-2 py-1.5 text-xs text-ink-600 transition-colors hover:bg-white/70 dark:text-ink-400 dark:hover:bg-night-700"><span class="w-4 shrink-0 tabular-nums text-ink-400">9</span><span class="truncate">十九年</span></a>
+      </nav>
+    </div>
+
+    <!-- 上下文栏 · 图谱视图：选中人物详情 -->
+    <div data-view="graph" class="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
+      <div class="flex items-start gap-3 border-b border-ink-300 px-4 py-4 dark:border-night-700">
+        <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-seal-600 font-serif text-lg text-white">雪</span>
+        <div class="min-w-0">
+          <h2 class="font-serif text-base font-semibold">西本雪穗</h2>
+          <p class="mt-0.5 text-[11px] text-ink-500 dark:text-ink-400">别名：唐泽雪穗 · 筱塚雪穗</p>
+        </div>
+      </div>
+      <dl class="grid grid-cols-2 gap-px bg-ink-200 text-center dark:bg-night-700">
+        <div class="bg-paper-100 py-3 dark:bg-night-800"><dt class="text-[10px] text-ink-500 dark:text-ink-400">提及</dt><dd class="font-serif text-lg font-semibold tabular-nums">412</dd></div>
+        <div class="bg-paper-100 py-3 dark:bg-night-800"><dt class="text-[10px] text-ink-500 dark:text-ink-400">关系</dt><dd class="font-serif text-lg font-semibold tabular-nums">11</dd></div>
+      </dl>
+      <div class="px-4 py-4">
+        <p class="text-xs leading-relaxed text-ink-700 dark:text-ink-300">全书的中心。表面完美无瑕，内里由亮司在暗处替她清扫一切障碍。首次出现于第 1 章。</p>
+        <p class="mt-3 text-[11px] font-medium tracking-wider text-ink-500 dark:text-ink-400">关系（按权重）</p>
+        <ul class="mt-2 space-y-1.5">
+          <li class="flex items-center gap-2 rounded-btn px-1.5 py-1.5 text-xs transition-colors hover:bg-white/70 dark:hover:bg-night-700"><i class="h-2 w-2 shrink-0 rounded-full" style="background:#3F7A6B"></i><span class="flex-1 truncate">桐原亮司</span><span class="text-[10px] text-ink-400">同盟 · 87</span></li>
+          <li class="flex items-center gap-2 rounded-btn px-1.5 py-1.5 text-xs transition-colors hover:bg-white/70 dark:hover:bg-night-700"><i class="h-2 w-2 shrink-0 rounded-full" style="background:#B33A3A"></i><span class="flex-1 truncate">筱塚一成</span><span class="text-[10px] text-ink-400">爱人 · 34</span></li>
+          <li class="flex items-center gap-2 rounded-btn px-1.5 py-1.5 text-xs transition-colors hover:bg-white/70 dark:hover:bg-night-700"><i class="h-2 w-2 shrink-0 rounded-full" style="background:#3F5B4E"></i><span class="flex-1 truncate">唐泽礼子</span><span class="text-[10px] text-ink-400">家人 · 28</span></li>
+          <li class="flex items-center gap-2 rounded-btn px-1.5 py-1.5 text-xs transition-colors hover:bg-white/70 dark:hover:bg-night-700"><i class="h-2 w-2 shrink-0 rounded-full" style="background:#C9A15B"></i><span class="flex-1 truncate">川岛江利子</span><span class="text-[10px] text-ink-400">朋友 · 21</span></li>
+          <li class="flex items-center gap-2 rounded-btn px-1.5 py-1.5 text-xs transition-colors hover:bg-white/70 dark:hover:bg-night-700"><i class="h-2 w-2 shrink-0 rounded-full" style="background:#6B2E2E"></i><span class="flex-1 truncate">笹垣润三</span><span class="text-[10px] text-ink-400">敌人 · 16</span></li>
+        </ul>
+        <div class="mt-4 space-y-2">
+          <button data-goto="raw" class="flex min-h-[38px] w-full cursor-pointer items-center justify-center gap-1.5 rounded-btn border border-ink-300 text-xs text-ink-700 transition-colors hover:border-ink-900 dark:border-night-600 dark:text-ink-300">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>跳到首次出现
+          </button>
+          <button class="flex min-h-[38px] w-full cursor-pointer items-center justify-center gap-1.5 rounded-btn bg-ink-900 text-xs text-paper-50 transition-colors hover:bg-ink-800 dark:bg-seal-600">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>问 AI 这个人
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 上下文栏 · 原文视图：章节目录（当前实现里这块被丢弃了） -->
+    <div data-view="raw" class="flex min-h-0 flex-1 flex-col">
+      <div class="flex items-center gap-2 border-b border-ink-300 px-4 py-3 dark:border-night-700">
+        <p class="text-[11px] font-medium tracking-wider text-ink-500 dark:text-ink-400">章节目录</p>
+        <span class="ml-auto text-[10px] text-ink-400">5 / 13</span>
+      </div>
+      <nav class="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-2 py-2" aria-label="章节目录">
+        <a href="#" class="flex cursor-pointer gap-2 rounded-btn px-2 py-1.5 text-xs text-ink-600 transition-colors hover:bg-white/70 dark:text-ink-400 dark:hover:bg-night-700"><span class="w-4 shrink-0 tabular-nums text-ink-400">4</span><span class="truncate">新的名字</span></a>
+        <a href="#" aria-current="true" class="flex cursor-pointer gap-2 rounded-btn bg-white px-2 py-1.5 text-xs font-medium text-seal-600 shadow-sm2 dark:bg-night-700"><span class="w-4 shrink-0 tabular-nums">5</span><span class="truncate">江利子的男友</span></a>
+        <a href="#" class="flex cursor-pointer gap-2 rounded-btn px-2 py-1.5 text-xs text-ink-600 transition-colors hover:bg-white/70 dark:text-ink-400 dark:hover:bg-night-700"><span class="w-4 shrink-0 tabular-nums text-ink-400">6</span><span class="truncate">剪刀</span></a>
+        <a href="#" class="flex cursor-pointer gap-2 rounded-btn px-2 py-1.5 text-xs text-ink-600 transition-colors hover:bg-white/70 dark:text-ink-400 dark:hover:bg-night-700"><span class="w-4 shrink-0 tabular-nums text-ink-400">7</span><span class="truncate">婚约</span></a>
+      </nav>
+      <div class="border-t border-ink-300 p-3 dark:border-night-700">
+        <p class="text-[11px] font-medium tracking-wider text-ink-500 dark:text-ink-400">本章出场</p>
+        <div class="mt-2 flex flex-wrap gap-1.5">
+          <span class="cursor-pointer rounded-full bg-white px-2 py-1 text-[11px] shadow-sm2 dark:bg-night-700">西本雪穗</span>
+          <span class="cursor-pointer rounded-full bg-white px-2 py-1 text-[11px] shadow-sm2 dark:bg-night-700">川岛江利子</span>
+          <span class="cursor-pointer rounded-full bg-white px-2 py-1 text-[11px] shadow-sm2 dark:bg-night-700">筱塚一成</span>
+          <span class="cursor-pointer rounded-full bg-white px-2 py-1 text-[11px] shadow-sm2 dark:bg-night-700">桐原亮司</span>
+        </div>
+      </div>
+    </div>
+
+    <div data-view="soon" class="flex flex-1 items-center justify-center p-4">
+      <p class="text-center text-xs text-ink-500 dark:text-ink-400">上下文栏随视图切换内容</p>
+    </div>
+  </aside>
+</div>
+
+<!-- 移动端底部 tab bar -->
+<nav id="tabbar" class="fixed bottom-0 left-0 right-0 z-30 flex border-t border-ink-300 bg-paper-100/95 backdrop-blur md:hidden dark:border-night-700 dark:bg-night-800/95" aria-label="视图切换（移动端）">
+  <button data-goto="overview" class="flex min-h-[52px] flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 text-[10px] text-ink-600">
+    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>全景
+  </button>
+  <button data-goto="graph" class="flex min-h-[52px] flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 text-[10px] text-ink-600">
+    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 5"/></svg>图谱
+  </button>
+  <button data-goto="soon" class="flex min-h-[52px] flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 text-[10px] text-ink-600">
+    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>情节
+  </button>
+  <button data-goto="soon" class="flex min-h-[52px] flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 text-[10px] text-ink-600">
+    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>时间
+  </button>
+  <button data-goto="raw" class="flex min-h-[52px] flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 text-[10px] text-ink-600">
+    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>原文
+  </button>
+</nav>
+
+<!-- 浮动：问 AI -->
+<button class="fixed bottom-20 right-4 z-40 flex h-12 cursor-pointer items-center gap-2 rounded-full bg-ink-900 px-4 text-sm text-paper-50 shadow-pop transition-transform hover:bg-ink-800 md:bottom-6 md:right-6 dark:bg-seal-600">
+  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>问 AI
+</button>
+
+<script>
+// 视图切换 + 日夜切换（mockup 用，真实实现走 react-router 嵌套路由）
+const VIEWS = ['overview','graph'];
+function setView(v){
+  document.querySelectorAll('[data-view]').forEach(el=>el.classList.toggle('hidden', el.dataset.view!==v));
+  document.querySelectorAll('[data-goto]').forEach(b=>{
+    const on = b.dataset.goto===v;
+    b.setAttribute('aria-current', on ? 'page' : 'false');
+    b.classList.toggle('bg-seal-600', on); b.classList.toggle('text-white', on);
+    b.classList.toggle('text-ink-600', !on);
+  });
+}
+document.addEventListener('click', e=>{
+  const b = e.target.closest('[data-goto]'); if(b) setView(b.dataset.goto);
+  if(e.target.closest('#themeBtn')) document.documentElement.classList.toggle('dark');
+});
+setView('overview');
+</script>
+</body>
+</html>

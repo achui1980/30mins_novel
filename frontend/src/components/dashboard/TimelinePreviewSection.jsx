@@ -22,7 +22,7 @@ export default function TimelinePreviewSection({ id, onOpenTimeline }) {
   const teaser = pickTimelineTeaser(events, 4);
 
   return (
-    <section id="sec-timeline" className="scroll-mt-16 border-b border-ink-300 py-8">
+    <section id="sec-timeline" className="scroll-mt-[52px] border-b border-ink-300 py-8">
       <div className="flex items-center justify-between">
         <h2 className="font-serif text-lg font-semibold text-ink-900">时间轴</h2>
         <button type="button" onClick={onOpenTimeline} className="text-sm text-ink-600 hover:text-seal-600 hover:underline">

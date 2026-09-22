@@ -1,7 +1,7 @@
 export default function ArcsPreviewSection({ ls, onOpenArcs, onOpenStory }) {
   const arcs = ls.arcs || [];
   return (
-    <section id="sec-arcs" className="scroll-mt-16 border-b border-ink-300 py-8">
+    <section id="sec-arcs" className="scroll-mt-[52px] border-b border-ink-300 py-8">
       <div className="flex items-center justify-between">
         <h2 className="font-serif text-lg font-semibold text-ink-900">情节脉络</h2>
         <button type="button" onClick={onOpenArcs} className="text-sm text-ink-600 hover:text-seal-600 hover:underline">

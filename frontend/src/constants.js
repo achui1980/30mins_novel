@@ -45,3 +45,13 @@ export const PHASE_ORDER = [
   "summarizing",
   "done",
 ];
+
+// 关系演变边的样式与文案 (design §5.3/§7)。
+// confirmed=false 表示强模型没确认（或离线模式跳过了确认）。
+export const EVOLUTION_EDGE_DASHES = [6, 4];
+export const EVOLUTION_BADGE_CONFIRMED = "关系演变";
+export const EVOLUTION_BADGE_UNCONFIRMED = "疑似演变";
+
+export function evolutionBadge(confirmed) {
+  return confirmed ? EVOLUTION_BADGE_CONFIRMED : EVOLUTION_BADGE_UNCONFIRMED;
+}

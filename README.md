@@ -17,7 +17,8 @@
 
 ## 界面预览
 
-以《白夜行》为例，读者页（`ReaderPage`）分 6 个标签页，均由处理产出的工作包驱动：
+以《白夜行》为例，读者页（`ReaderPage`）是一张总览仪表盘（`Dashboard`）加 5 个全屏浮层
+（原文 / 人物关系 / 故事脉络 / 时间轴 / 故事正片）与一个问答浮层，均由处理产出的工作包驱动：
 
 ### 概览
 
@@ -182,6 +183,7 @@ PYTHONPATH=. pytest -q               # 需从 backend/ 目录并设置 PYTHONPAT
 | `GET` / `POST` | `/works/{id}/beats` · `/beats/{i}/story` | 故事正片（按需叙述，缓存）|
 | `GET` / `POST` | `/works/{id}/ask` | 图谱问答（缓存优先，再调 LLM）|
 | `DELETE` | `/works/{id}` | 删除作品 |
+| `POST` | `/works/{id}/reanalyze` | 用已存的原文重跑管道（重试 / 解锁时间轴） |
 
 提取分两档：**快速（默认）** 仅角色 + 主线关系 + 关键事件；**完整** 提取全部实体。
 
@@ -192,6 +194,17 @@ PYTHONPATH=. pytest -q               # 需从 backend/ 目录并设置 PYTHONPAT
 8 个固定类别，前后端必须保持一致：
 家人 / 爱人 / 朋友 / 敌人 / 师徒 / 主仆 / 同盟 / 其他。
 仅 **师徒** 和 **主仆** 为有向关系（绘制箭头）。
+
+---
+
+## 关系图时间维度
+
+`graph.json` 带有顶层 `chapters`（`{id,title,order}`）与 `transitions`
+（关系演变），节点带 `first_chapter` / `mentions_by_chapter`，边带 `chapters` /
+`first_chapter`。阅读页「人物关系」据此提供章节滑块、关系演变高亮与人物出场
+曲线。旧版本产出的作品没有这些字段，页面会提示「重新分析」。
+
+关掉演变判定：`NOVEL_KG_EVOLVE_ENABLED=0`（滑块与曲线仍然可用）。
 
 ---
 

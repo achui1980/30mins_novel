@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { getStatus } from "../api";
+import { getStatus, reanalyzeWork } from "../api";
 import { PHASE_LABELS, PHASE_ORDER } from "../constants";
 import AppShell from "../components/AppShell";
 
@@ -19,7 +19,50 @@ export default function ProcessingPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState(null);
   const [error, setError] = useState("");
+  const [retryMsg, setRetryMsg] = useState("");
+  const [retryPending, setRetryPending] = useState(false);
+  // Bumped after a successful reanalyze to restart the poll chain below.
+  // The chain is self-rescheduling and deliberately stops when phase ===
+  // "failed", so by the time the failure card is on screen there is no
+  // pending timer left to pick up the new run — only re-running the effect
+  // starts a fresh chain.
+  const [retryNonce, setRetryNonce] = useState(0);
+  // One shared timer ref is sufficient because at most one poll chain is ever
+  // alive: every teardown both poisons its own closure's `cancelled` flag and
+  // clears the pending timer, and React flushes all cleanups before all
+  // creates. A future change that lets polling continue past "failed", or that
+  // adds a second poller, would silently double-book `timer.current` and leak a
+  // timer — and no test would catch it.
   const timer = useRef(null);
+  // The live work id, for `onRetry`'s identity guard. A plain `const myId = id`
+  // comparison cannot work: `onRetry` closes over the very same `id` binding it
+  // would compare against, so the check is structurally always false. This ref
+  // is the only thing in the component that sees the *current* id from inside a
+  // stale closure.
+  const liveId = useRef(id);
+
+  // `useLayoutEffect`, not `useEffect`, and not a write during render.
+  // The window this has to close is "a POST resolves while `liveId.current`
+  // still names the previous work". A POST continuation is a microtask; layout
+  // effects flush synchronously inside the commit block, and a microtask cannot
+  // interleave into synchronous JS — so by the time any continuation runs, the
+  // ref is current. `useEffect` would *not* be enough: React 18 schedules
+  // passive effects through its MessageChannel-backed scheduler, i.e. a
+  // macrotask, which a promise continuation can beat. Writing the ref during
+  // render would also close the window, but it writes on renders that may never
+  // commit (`startTransition`), so it would start lying the moment anyone made
+  // this route a transition.
+  //
+  // The two resets are a separate concern that keys off the same event: this
+  // route is /works/:id/processing, so changing `id` does *not* remount —
+  // `retryMsg` and `retryPending` are plain state and would otherwise bleed from
+  // work A to work B (a ghost "正在提交…" plus a disabled button on B's failure
+  // card). Clearing them here ties the retry UI to the work it describes.
+  useLayoutEffect(() => {
+    liveId.current = id;
+    setRetryMsg("");
+    setRetryPending(false);
+  }, [id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +89,37 @@ export default function ProcessingPage() {
       cancelled = true;
       clearTimeout(timer.current);
     };
-  }, [id, navigate]);
+  }, [id, navigate, retryNonce]);
+
+  async function onRetry() {
+    if (retryPending) return;
+    // Identity guard. The effect's `cancelled` flag is declared inside the
+    // effect body, so it does not cover anything out here: a POST for work A
+    // that resolves after the route has switched to work B would otherwise
+    // blank B's status and tear down / restart B's poll chain.
+    const myId = id;
+    setRetryPending(true);
+    setRetryMsg("正在提交…");
+    try {
+      await reanalyzeWork(id);
+      if (liveId.current !== myId) return;
+      setRetryMsg("");
+      // Clearing status swaps the failure card for the progress card;
+      // bumping the nonce is what actually revives polling.
+      setStatus(null);
+      setRetryNonce((n) => n + 1);
+    } catch (e) {
+      if (liveId.current !== myId) return;
+      setRetryMsg(e.message || "重新分析失败");
+    } finally {
+      // Identity-guarded like the two branches above. Resetting `retryPending`
+      // on id change makes it possible for A's POST and B's POST to be in
+      // flight at once (previously A's leaked pending flag kept B's button
+      // disabled until A settled); an unguarded reset here would re-enable B's
+      // button mid-flight and allow a double submit for B.
+      if (liveId.current === myId) setRetryPending(false);
+    }
+  }
 
   const phase = status?.phase || "queued";
   const failed = phase === "failed";
@@ -86,12 +159,25 @@ export default function ProcessingPage() {
             <div className="rounded-card border border-danger-600/40 bg-danger-600/5 px-4 py-2 text-sm text-danger-600">
               处理失败：{status?.error || status?.message || "未知错误"}
             </div>
-            <Link
-              to="/"
-              className="mt-4 inline-block rounded-btn bg-seal-600 px-4 py-2 text-sm text-white hover:bg-seal-700"
-            >
-              返回首页重试
-            </Link>
+            <div className="mt-4 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onRetry}
+                disabled={retryPending}
+                aria-busy={retryPending}
+                className="rounded-btn bg-seal-600 px-4 py-2 text-sm text-white hover:bg-seal-700 disabled:opacity-50"
+              >
+                重新分析
+              </button>
+              <Link to="/" className="text-sm text-ink-600 hover:text-seal-600 hover:underline">
+                返回首页
+              </Link>
+            </div>
+            {retryMsg && (
+              <p className="mt-2 text-xs text-ink-600" aria-live="polite">
+                {retryMsg}
+              </p>
+            )}
           </div>
         ) : (
           <div className="mt-6 rounded-card border border-ink-300 bg-white p-6">

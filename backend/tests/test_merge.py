@@ -140,3 +140,138 @@ def test_add_extraction_threads_chapter_id_into_relationships():
     reg.add_extraction(ext, chapter_id="ch0003")
     rec = next(iter(reg.relationships.values()))
     assert rec.chapter_id == "ch0003"
+
+
+def test_add_relationship_accumulates_chapters():
+    from app.models import Relationship
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    rel = Relationship(
+        source="甲",
+        target="乙",
+        category="朋友",
+        detail="同门",
+        evidence="甲与乙同行",
+        confidence=0.9,
+    )
+    reg.add_relationship(rel, "ch0001")
+    reg.add_relationship(rel, "ch0001")
+    reg.add_relationship(rel, "ch0005")
+
+    rec = next(iter(reg.relationships.values()))
+    assert rec.chapters == {"ch0001": 2, "ch0005": 1}
+    assert rec.count == 3
+
+
+def test_add_relationship_returns_record_and_skips_chapter_when_asked():
+    from app.models import Relationship
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    rel = Relationship(
+        source="甲",
+        target="乙",
+        category="朋友",
+        detail="",
+        evidence="",
+        confidence=0.5,
+    )
+    rec = reg.add_relationship(rel, "ch0002", record_chapter=False)
+    assert rec is not None
+    assert rec.chapters == {}
+    assert rec.count == 1
+    assert rec.chapter_id == "ch0002"
+
+
+def test_add_relationship_returns_none_for_self_loop():
+    from app.models import Relationship
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    rel = Relationship(
+        source="甲",
+        target="甲",
+        category="朋友",
+        detail="",
+        evidence="",
+        confidence=0.5,
+    )
+    assert reg.add_relationship(rel, "ch0001") is None
+
+
+def test_add_character_records_mentions_by_chapter():
+    from app.models import Character
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    reg.add_character(Character(name="甲", aliases=[], role="主角", description="少年"), "ch0001")
+    reg.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0001")
+    reg.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0003")
+
+    rec = reg.characters["甲"]
+    assert rec.mentions_by_chapter == {"ch0001": 2, "ch0003": 1}
+    assert rec.mention_count == 3
+
+
+def test_add_place_records_mentions_by_chapter():
+    from app.models import Place
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    reg.add_place(Place(name="洛阳", description="东都"), "ch0002")
+    reg.add_place(Place(name="洛阳", description=""), "ch0004")
+
+    assert reg.places["洛阳"].mentions_by_chapter == {"ch0002": 1, "ch0004": 1}
+
+
+def test_add_extraction_threads_chapter_into_characters():
+    from app.models import ChunkExtraction, Character, Place
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    extraction = ChunkExtraction(
+        characters=[Character(name="甲", aliases=[], role="", description="")],
+        places=[Place(name="洛阳", description="")],
+        events=[],
+        relationships=[],
+    )
+    reg.add_extraction(extraction, "ch0007")
+
+    assert reg.characters["甲"].mentions_by_chapter == {"ch0007": 1}
+    assert reg.places["洛阳"].mentions_by_chapter == {"ch0007": 1}
+
+
+def test_record_chapter_false_suppresses_histogram_but_keeps_counts():
+    """record_chapter=False 只压制按章直方图，mention_count 照常 +1。
+
+    跨弧合并 (merge_arcs) 依赖这个语义重新灌入弧记录：真实的按章分布由
+    _merge_counts 直接搬运，add_* 不能再自己记一次。
+    """
+    from app.models import Character, Place
+    from app.pipeline.merge import EntityRegistry
+
+    reg = EntityRegistry()
+    reg.add_character(
+        Character(name="甲", aliases=[], role="", description=""),
+        "ch0001",
+        record_chapter=False,
+    )
+    reg.add_place(
+        Place(name="洛阳", description=""),
+        "ch0001",
+        record_chapter=False,
+    )
+
+    assert reg.characters["甲"].mentions_by_chapter == {}
+    assert reg.characters["甲"].mention_count == 1
+    assert reg.places["洛阳"].mentions_by_chapter == {}
+    assert reg.places["洛阳"].mention_count == 1
+
+    # 默认仍然记章，且与被压制的那次累计在同一条记录上。
+    reg.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0001")
+    reg.add_place(Place(name="洛阳", description=""), "ch0001")
+    assert reg.characters["甲"].mentions_by_chapter == {"ch0001": 1}
+    assert reg.characters["甲"].mention_count == 2
+    assert reg.places["洛阳"].mentions_by_chapter == {"ch0001": 1}
+    assert reg.places["洛阳"].mention_count == 2

@@ -138,6 +138,21 @@ if STRONG_LLM_PROVIDER not in {"bedrock", "openai_compatible"}:
 # jobs simply block (stay "queued") until a slot frees up.
 MAX_CONCURRENT_JOBS = int(_env("NOVEL_KG_MAX_CONCURRENT_JOBS", "3"))
 
+# --- 关系演变判定 (design §3.3/§8) ------------------------------------------
+# 一个「关系状态」至少要出现多少次才算真实状态（低于此且只出现在单一章节的，
+# 视为抽取噪声丢弃）。
+EVOLVE_STABILITY_MIN = int(_env("NOVEL_KG_EVOLVE_STABILITY_MIN", "2"))
+# 强模型确认时每批塞多少个候选对。
+EVOLVE_BATCH_SIZE = int(_env("NOVEL_KG_EVOLVE_BATCH_SIZE", "10"))
+# 总开关。关掉后 transitions 恒为空数组，但节点/边的按章分布与顶层 chapters
+# 仍然照常输出——滑块与出场曲线不受影响，只是没有演变高亮。
+EVOLVE_ENABLED = _env("NOVEL_KG_EVOLVE_ENABLED", "1") not in {
+    "0",
+    "false",
+    "False",
+    "no",
+}
+
 
 class InvalidWorkIdError(ValueError):
     """Raised when a work_id fails validation (e.g. path traversal attempt)."""

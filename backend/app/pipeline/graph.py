@@ -18,12 +18,16 @@ already-computed story spine (design §4.2).
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..models import DIRECTED_CATEGORIES, RelationCategory, confidence_label
 from .merge import EntityRegistry
+
+logger = logging.getLogger(__name__)
 
 _ID_RE = re.compile(r"[^a-z0-9_]+")
 
@@ -37,6 +41,24 @@ def _slug(name: str, salt: int) -> str:
     return base
 
 
+def _first_chapter(
+    counts: dict[str, int], chapter_order: dict[str, int] | None
+) -> str:
+    """按章序取首次出场章。没有 order 表时退化为字典序（chNNNN 零填充）。
+
+    永不抛异常：空直方图（merge_arcs 为「只在关系里出现过的人物」补的记录就是
+    空的）返回 ""；直方图里的章 id 全都不在 order 表里时，过滤掉而不是把它们
+    的序当 0，再退化到字典序。
+    """
+    if not counts:
+        return ""
+    if chapter_order:
+        known = [c for c in counts if c in chapter_order]
+        if known:
+            return min(known, key=lambda c: chapter_order[c])
+    return min(counts)
+
+
 @dataclass
 class GraphArtifacts:
     graph: object  # networkx.Graph
@@ -47,8 +69,16 @@ class GraphArtifacts:
     label_to_id: dict
 
 
-def build_extraction_json(registry: EntityRegistry) -> tuple[dict, dict, dict]:
-    """Return (extraction_json, name_to_id, id_to_name)."""
+def build_extraction_json(
+    registry: EntityRegistry, chapter_order: dict[str, int] | None = None
+) -> tuple[dict, dict, dict]:
+    """Return (extraction_json, name_to_id, id_to_name).
+
+    ``chapter_order`` is an optional ``chapter_id -> order`` lookup (see
+    ``evolve.chapter_order_map``). It only decides which chapter counts as
+    "first": chapter precedence is judged by that numeric order, never by
+    comparing chapter-id strings. ``None`` is fully supported.
+    """
     name_to_id: dict[str, str] = {}
     id_to_name: dict[str, str] = {}
     nodes: list[dict] = []
@@ -86,6 +116,8 @@ def build_extraction_json(registry: EntityRegistry) -> tuple[dict, dict, dict]:
                 "aliases": sorted(rec.aliases),
                 "source_location": "",
                 "mention_count": rec.mention_count,
+                "mentions_by_chapter": dict(rec.mentions_by_chapter),
+                "first_chapter": _first_chapter(rec.mentions_by_chapter, chapter_order),
             }
         )
 
@@ -102,6 +134,8 @@ def build_extraction_json(registry: EntityRegistry) -> tuple[dict, dict, dict]:
                 "description": rec.description,
                 "source_location": "",
                 "mention_count": rec.mention_count,
+                # 地点只用它推首次出场章，不画曲线，所以不带 mentions_by_chapter。
+                "first_chapter": _first_chapter(rec.mentions_by_chapter, chapter_order),
             }
         )
 
@@ -122,6 +156,8 @@ def build_extraction_json(registry: EntityRegistry) -> tuple[dict, dict, dict]:
                             "node_type": "character",
                             "description": "",
                             "mention_count": 1,
+                            "mentions_by_chapter": {},
+                            "first_chapter": "",
                         }
                     )
         try:
@@ -141,6 +177,10 @@ def build_extraction_json(registry: EntityRegistry) -> tuple[dict, dict, dict]:
                 "confidence_label": confidence_label(rec.confidence),
                 "directed": cat_enum in DIRECTED_CATEGORIES,
                 "weight": max(1, rec.count),
+                # 注意：weight 仍来自 rec.count，不从 chapters 推导。
+                # count != sum(chapters.values())（见 merge.py:81-83），这是有意的。
+                "chapters": dict(rec.chapters),
+                "first_chapter": _first_chapter(rec.chapters, chapter_order),
                 "source_location": "",
             }
         )
@@ -160,12 +200,16 @@ def run_graphify(
     graph_json_path: Path,
     graph_html_path: Path,
     community_labeler=None,
+    chapter_order: dict[str, int] | None = None,
 ) -> GraphArtifacts:
     """Run the full graphify build and write graph.json + graph.html.
 
     ``community_labeler`` is an optional callable
     ``(communities, id_to_name, registry) -> {community_id: label}``. If None,
     a simple heuristic label (top character in the community) is used.
+
+    ``chapter_order`` is passed straight through to ``build_extraction_json`` so
+    the per-node/per-edge ``first_chapter`` fields are ranked by chapter order.
     """
     import graphify.analyze as analyze
     import graphify.cluster as cluster_mod
@@ -177,7 +221,9 @@ def run_graphify(
     except Exception:  # pragma: no cover - fallback path
         from graphify.export import to_html  # type: ignore
 
-    extraction, name_to_id, id_to_name = build_extraction_json(registry)
+    extraction, name_to_id, id_to_name = build_extraction_json(
+        registry, chapter_order=chapter_order
+    )
     G = build_from_json(extraction, directed=False)
 
     communities = cluster_mod.cluster(G) or {}
@@ -263,3 +309,81 @@ def _heuristic_labels(communities: dict, G, id_to_name: dict, registry: EntityRe
                 best_name = data.get("label") or id_to_name.get(nid, nid)
         labels[cid] = f"{best_name}相关情节线" if best_name else f"情节线 {cid}"
     return labels
+
+
+def patch_graph_timeline(
+    graph_json_path: Path,
+    chapters: list[dict],
+    transitions: list[dict],
+    name_to_id: dict[str, str],
+) -> None:
+    """把顶层 chapters / transitions 补写进 graph.json (design §4.1)。
+
+    graph.json 由 graphify 的 to_json 写出，build_from_json -> to_json 这一圈
+    只保留 per-node / per-edge 的自定义字段，顶层自定义键会被丢掉（往返后顶层
+    只剩 built_at_commit / directed / graph / hyperedges / links / multigraph /
+    nodes），所以顶层键只能事后补 —— 与 locate.patch_graph_edge_locations 同一
+    模式。
+
+    ``transitions`` 是 ``evolve.detect_transitions`` 的返回值，其 ``pair`` 装的是
+    **人物名**而不是节点 id（CJK 名字 slug 成空串后 ``_slug()`` 会退化成
+    ``n{salt}``，见 AGENTS.md），所以必须用 ``name_to_id`` 翻译。名字对里任一个
+    翻不出 id、或形状不合法（条目不是 dict、``pair`` 不是恰好两个字符串）的条目
+    静默丢弃。``steps`` 已由上游按章序排好、``pair`` 已按 merge.py 的无向规范序
+    排好，这里只原样搬运，不重排。
+
+    本函数永不抛异常：读不到、解析不了、顶层不是 dict、或写回失败，都保持原文件
+    不动并正常返回；前端缺顶层 chapters 键时按「旧版本作品」降级。
+    """
+    path = Path(graph_json_path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - 本函数的契约就是永不抛异常
+        logger.warning("patch_graph_timeline: 读取 graph.json 失败，跳过", exc_info=True)
+        return
+
+    if not isinstance(data, dict):
+        return
+
+    mapped: list[dict] = []
+    name_to_id = name_to_id or {}
+    for item in transitions or []:
+        # 非 dict 的条目是真值，`(item or {})` 保护不住它，会 AttributeError；
+        # pair 不是列表 / 元素不是字符串同样会 TypeError（list / set 不可 hash、
+        # int 不可 len）。永不抛异常是硬约束，所以逐层挡掉。
+        # detect_transitions 今天只产出规范 dict，这些分支实际不该被触发。
+        if not isinstance(item, dict):
+            continue
+        pair = item.get("pair") or []
+        if not isinstance(pair, (list, tuple)):
+            continue
+        if len(pair) != 2:
+            continue
+        if not all(isinstance(x, str) for x in pair):
+            continue
+        src_id = name_to_id.get(pair[0])
+        tgt_id = name_to_id.get(pair[1])
+        if not src_id or not tgt_id:
+            continue
+        mapped.append(
+            {
+                "pair": [src_id, tgt_id],
+                "steps": item.get("steps") or [],
+                "confirmed": bool(item.get("confirmed")),
+            }
+        )
+
+    data["chapters"] = list(chapters or [])
+    data["transitions"] = mapped
+
+    try:
+        from graphify.paths import write_json_atomic
+
+        # 与 locate.patch_graph_edge_locations 写同一个文件，参数必须一致，
+        # 否则 CJK 会被转义成 \uXXXX、缩进也会丢。
+        write_json_atomic(path, data, indent=2, ensure_ascii=False)
+    except Exception:  # noqa: BLE001
+        try:
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            logger.warning("patch_graph_timeline: 写回 graph.json 失败", exc_info=True)

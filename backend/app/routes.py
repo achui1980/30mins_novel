@@ -95,6 +95,54 @@ def _init_status(work_id: str, title: str, granularity: str) -> None:
     )
 
 
+@router.post(
+    "/works/{work_id}/reanalyze", status_code=202, response_model=CreateWorkResponse
+)
+async def reanalyze_work(
+    work_id: str, background_tasks: BackgroundTasks
+) -> CreateWorkResponse:
+    """用磁盘上已有的 raw.* 重跑一次管道（design §6）。
+
+    不预删旧产物：管道会逐阶段覆盖它们。预删的话中途失败就把作品毁了，
+    覆盖则失败后仍能看到上一次的结果。
+    """
+    # read_meta 内部会走 config.work_dir 校验 work_id，非法 id -> 400。
+    meta = store.read_meta(work_id)
+    if meta is None:
+        raise HTTPException(404, "作品不存在")
+
+    status = store.get_status(work_id)
+    # 不变量（TOCTOU）：这里的阶段检查和下面的 _init_status() 写入**不是原子的**。
+    # 今天之所以安全，仅仅因为本协程从这一行到 _init_status() 之间**没有任何 await**，
+    # 所以这一段在事件循环上不会被别的请求切入。这是偶然而非设计。
+    # 一旦在这中间引入 await（例如给上面几次磁盘读加 asyncio.to_thread），或者用多
+    # worker 启 uvicorn，两个并发 POST 就能同时通过本守卫、各自 dispatch 一条管道到
+    # 同一个 work 目录（MAX_CONCURRENT_JOBS 默认 3，见 app/config.py）。
+    # 要真正修好需要按 work_id 加锁或改成原子的 compare-and-set；见设计文档
+    # docs/superpowers/specs/2026-09-20-relation-graph-timeline-design.md §11.3。
+    if status is not None and status.phase not in ("done", "failed"):
+        raise HTTPException(409, "该作品正在处理中")
+
+    raw_path = store.find_raw_path(work_id)
+    if raw_path is None:
+        raise HTTPException(409, "原始文件已丢失，无法重新分析")
+
+    # beat_summaries.json 按 beat 下标做键，spine.json 会重建，必须清掉。
+    store.clear_beat_cache(work_id)
+
+    filename = meta.get("filename") or raw_path.name
+    title = meta.get("title") or filename.rsplit(".", 1)[0]
+    granularity = meta.get("granularity") or "quick"
+    if granularity not in ("quick", "complete"):
+        granularity = "quick"
+
+    _init_status(work_id, title, granularity)
+    background_tasks.add_task(
+        _launch_pipeline, work_id, raw_path, filename, title, granularity
+    )
+    return CreateWorkResponse(work_id=work_id, status="queued", reused=False)
+
+
 @router.get("/works")
 async def list_works():
     return [item.model_dump() for item in store.list_works()]

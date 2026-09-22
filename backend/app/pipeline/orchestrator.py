@@ -11,6 +11,7 @@ Produces on disk: raw.<ext>, graph.json, graph.html, summary.json, status.json.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import traceback
@@ -23,8 +24,9 @@ from ..models import (
     WorkStatus,
 )
 from .chunk import chunk_novel
+from .evolve import detect_transitions
 from .extract import extract_arcs
-from .graph import run_graphify
+from .graph import patch_graph_timeline, run_graphify
 from .locate import locate_paragraph, patch_graph_edge_locations, split_paragraphs
 from .merge import EntityRegistry, merge_arcs
 from .parse import ParseError, parse_upload
@@ -127,6 +129,16 @@ async def run_pipeline(
         )
         registry = await asyncio.to_thread(merge_arcs, arc_registries)
 
+        # 章序表：order **必须每章都给**。evolve.chapter_order_map 在 order 缺失
+        # 或非数值时退化成该元素的枚举下标，而下标与真 order 共用同一个数轴且无从
+        # 对账 —— 一份「有的给有的不给」的列表可能把叙事顺序整体反转，而不只是撞号。
+        # 所以这里无条件给全 1..N，绝不做成条件分支。
+        chapters_meta = [
+            {"id": c.id, "title": c.title, "order": i + 1}
+            for i, c in enumerate(novel.chapters)
+        ]
+        chapter_order = {c["id"]: c["order"] for c in chapters_meta}
+
         if not registry.characters:
             raise ParseError("未能抽取到任何人物，无法构建图谱")
 
@@ -151,6 +163,20 @@ async def run_pipeline(
         graph_json = wdir / "graph.json"
         graph_html = wdir / "graph.html"
 
+        # 关系演变判定仍在既有 building 阶段内 —— 不新增 Phase（后端 Phase 枚举与
+        # 前端镜像的 PHASE_* 都不动），进度只通过 status.message 体现。
+        # detect_transitions 的 confirmer / warn_cb 是 keyword-only，而
+        # asyncio.to_thread 只传位置参数，所以用 functools.partial 包一层。
+        # 它永不抛异常（失败即降级为「没有演变」），故此处不再自套 try/except，
+        # 否则只会掩盖真正的 bug。
+        status.message = "正在判定关系演变…"
+        write_status(status)
+        transitions = await asyncio.to_thread(
+            functools.partial(
+                detect_transitions, registry, chapters_meta, warn_cb=on_warn
+            )
+        )
+
         # run_graphify 内部会做聚类、社区标注（含一次 LLM 往返）与 HTML 渲染，
         # 全部是同步阻塞调用；直接 await 它会占住 event loop，导致 write_status
         # 停更、GET /status 看起来像假死。
@@ -160,12 +186,22 @@ async def run_pipeline(
             graph_json,
             graph_html,
             community_labeler=label_communities,
+            chapter_order=chapter_order,
         )
 
         # locate.patch_graph_edge_locations 对每个 event 遍历全章段落做 difflib
         # 模糊匹配（O(events × paragraphs)），是整条流水线里最重的纯 CPU 步骤。
         await asyncio.to_thread(
             patch_graph_edge_locations, graph_json, registry, artifacts.label_to_id, paragraphs_by_chapter
+        )
+
+        # 必须在 patch_graph_edge_locations **之后**：两者都是对 graph.json 的整字典
+        # 读-改-写（各自重新从磁盘读），这个次序才不会让时间轴补写被冲掉。
+        # label_to_id 是 name -> node id，正是 patch_graph_timeline 需要的方向
+        # （id_to_label 是反向，传错会让所有 pair 翻不出 id 而被静默丢弃）。
+        # 同样包 to_thread：理由与上面两处一致，它也是纯 CPU 的整文件读改写。
+        await asyncio.to_thread(
+            patch_graph_timeline, graph_json, chapters_meta, transitions, artifacts.label_to_id
         )
 
         # 5. Summarize -------------------------------------------------------

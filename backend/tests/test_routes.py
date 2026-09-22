@@ -540,3 +540,260 @@ def test_ask_question_404_when_graph_missing(client):
 
     res = client.post(f"/works/{work_id}/ask", json={"question": "任何问题"})
     assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /works/{work_id}/reanalyze
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def data_root(client):
+    """The temp DATA_ROOT the `client` fixture redirected config to."""
+    return config.DATA_ROOT
+
+
+# Enough repeated CJK names for the offline fake extractor (which only promotes
+# n-grams seen >= 2 times to characters) to build a real graph, so a reanalyze
+# run can actually reach phase=done instead of dying at extraction.
+_REANALYZE_NOVEL = """第一章 相遇
+
+林黛玉走进大观园，遇见了贾宝玉。贾宝玉对林黛玉一见倾心，林黛玉也对贾宝玉心生好感。
+薛宝钗此时也在园中，薛宝钗与贾宝玉是表亲。
+
+第二章 离别
+
+林黛玉病重，贾宝玉日夜守候。薛宝钗前来探望林黛玉。
+最终林黛玉离世，贾宝玉悲痛欲绝，薛宝钗默默陪伴在贾宝玉身边。
+"""
+
+
+def _seed_work(tmp_root, work_id, phase="done"):
+    """在磁盘上摆出一个"已完成"的作品，供 reanalyze 用。"""
+    import json
+
+    wdir = tmp_root / work_id
+    wdir.mkdir(parents=True, exist_ok=True)
+    (wdir / "raw.txt").write_text("第一章\n甲与乙。\n", encoding="utf-8")
+
+    (wdir / "meta.json").write_text(
+        json.dumps(
+            {
+                "filename": "novel.txt",
+                "title": "旧作品",
+                "granularity": "quick",
+                "content_sha256": "deadbeef",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (wdir / "status.json").write_text(
+        json.dumps(
+            {
+                "work_id": work_id,
+                "title": "旧作品",
+                "granularity": "quick",
+                "phase": phase,
+                "progress": 1.0,
+                "message": "",
+                "warnings": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return wdir
+
+
+def test_reanalyze_returns_202_and_queues(client, data_root):
+    """The happy path, run all the way through: TestClient executes the
+    BackgroundTask synchronously, so by the time the response is returned the
+    offline pipeline has finished and the terminal phase is asserted explicitly
+    rather than left silent.
+
+    The seeded raw.txt is replaced with _REANALYZE_NOVEL: the fake extractor
+    only treats CJK n-grams occurring >= 2 times as characters, so the 3-line
+    placeholder produces none and the run dies at extraction with
+    "未能抽取到任何人物，无法构建图谱".
+    """
+    wdir = _seed_work(data_root, "re0001")
+    (wdir / "raw.txt").write_text(_REANALYZE_NOVEL, encoding="utf-8")
+    (wdir / "beat_summaries.json").write_text("{}", encoding="utf-8")
+    (wdir / "chapter_summaries.json").write_text("{}", encoding="utf-8")
+    # A stale graph.json from the previous run. The pipeline must *overwrite*
+    # it stage by stage rather than the endpoint pre-deleting it, so after a
+    # completed run it holds a real graph and no longer the sentinel.
+    (wdir / "graph.json").write_text(
+        json.dumps({"sentinel": "stale-graph"}), encoding="utf-8"
+    )
+
+    res = client.post("/works/re0001/reanalyze")
+    assert res.status_code == 202
+    body = res.json()
+    assert body["work_id"] == "re0001"
+    assert body["status"] == "queued"
+    assert body["reused"] is False
+    assert not (wdir / "beat_summaries.json").exists()
+    assert (wdir / "chapter_summaries.json").exists()
+
+    # The re-run must actually have succeeded — not merely have been accepted.
+    status = json.loads((wdir / "status.json").read_text(encoding="utf-8"))
+    assert status["phase"] == "done", status
+    assert not status.get("error")
+
+    # ...and the later stages must really have run, replacing the stale
+    # artifacts in place (constraint 1's "overwrites stage by stage" premise).
+    graph = json.loads((wdir / "graph.json").read_text(encoding="utf-8"))
+    assert "sentinel" not in graph
+    assert graph.get("nodes")
+    assert (wdir / "summary.json").exists()
+
+
+def test_reanalyze_rejects_malformed_work_id(client):
+    res = client.post("/works/bad%20id/reanalyze")
+    assert res.status_code == 400
+
+
+def test_reanalyze_404_for_unknown_work(client, data_root):
+    res = client.post("/works/nosuchwork/reanalyze")
+    assert res.status_code == 404
+    # Starlette's own "no route matched" 404 carries detail="Not Found"; only
+    # the handler's 404 says 作品不存在. Without this the test cannot tell a
+    # working endpoint from a missing one.
+    assert res.json()["detail"] == "作品不存在"
+
+
+def test_reanalyze_409_while_processing(client, data_root):
+    _seed_work(data_root, "re0002", phase="extracting")
+    res = client.post("/works/re0002/reanalyze")
+    assert res.status_code == 409
+
+
+def test_reanalyze_202_when_previous_run_failed(client, data_root, monkeypatch):
+    """phase=failed is the endpoint's primary use case — the retry button on the
+    processing page's failure card — so it must be re-queueable, not just
+    phase=done. The launcher is stubbed to keep the assertion about the guard
+    rather than about a pipeline run.
+    """
+    from app import routes
+
+    wdir = _seed_work(data_root, "re0005", phase="failed")
+    monkeypatch.setattr(routes, "_launch_pipeline", lambda *args: None)
+
+    res = client.post("/works/re0005/reanalyze")
+    assert res.status_code == 202
+    status = json.loads((wdir / "status.json").read_text(encoding="utf-8"))
+    assert status["phase"] == "queued"
+
+
+def test_reanalyze_409_when_raw_file_missing(client, data_root):
+    wdir = _seed_work(data_root, "re0003")
+    (wdir / "raw.txt").unlink()
+    res = client.post("/works/re0003/reanalyze")
+    assert res.status_code == 409
+
+
+def test_reanalyze_normalizes_corrupt_granularity_instead_of_500(
+    client, data_root, monkeypatch
+):
+    """A corrupt granularity in meta.json must be normalised to "quick".
+
+    Without the normalisation it reaches WorkStatus(granularity=...), whose
+    Literal["quick","complete"] raises ValidationError -> 500, so an old
+    meta.json with a bad value would make the work permanently un-retryable.
+    """
+    from app import routes
+
+    wdir = _seed_work(data_root, "re0006")
+    (wdir / "meta.json").write_text(
+        json.dumps(
+            {
+                "filename": "novel.txt",
+                "title": "旧作品",
+                "granularity": "weird",
+                "content_sha256": "deadbeef",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    calls: list[tuple] = []
+    monkeypatch.setattr(routes, "_launch_pipeline", lambda *args: calls.append(args))
+
+    res = client.post("/works/re0006/reanalyze")
+    assert res.status_code == 202
+    assert calls and calls[0][4] == "quick"
+    status = json.loads((wdir / "status.json").read_text(encoding="utf-8"))
+    assert status["granularity"] == "quick"
+
+
+def test_reanalyze_requeues_status_and_dispatches_saved_upload(
+    client, data_root, monkeypatch
+):
+    """status.json must revert to `queued` so the frontend can navigate straight
+    to the processing page, and the job must be dispatched with the *saved*
+    raw.* plus meta.json's filename/title/granularity (no re-upload).
+
+    _launch_pipeline is stubbed so status.json can be observed in its
+    freshly-queued state: TestClient runs BackgroundTasks to completion before
+    returning, and a real run would immediately overwrite it (with phase=done
+    for _REANALYZE_NOVEL, or phase=failed for _seed_work's placeholder text).
+
+    Stubbing the launcher is also what makes the no-pre-delete constraint
+    observable: a *successful* run regenerates every artifact, so pre-deletion
+    can only be detected while the pipeline is held back.
+    """
+    from app import routes
+
+    wdir = _seed_work(data_root, "re0004")
+    # granularity=complete (not the route's "quick" fallback) so the assertion
+    # below can only pass if meta.json was actually read.
+    (wdir / "meta.json").write_text(
+        json.dumps(
+            {
+                "filename": "novel.txt",
+                "title": "旧作品",
+                "granularity": "complete",
+                "content_sha256": "deadbeef",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    # Artifacts from the previous run. The endpoint must NOT pre-delete these:
+    # the pipeline overwrites them stage by stage, so a mid-run failure leaves
+    # the previous result visible instead of destroying the work.
+    preserved = {
+        "chapters.json": '{"ch0001": {"title": "旧章", "text": "旧文"}}',
+        "events.json": '[{"summary": "旧事件"}]',
+        "graph.json": '{"nodes": [{"id": "old"}]}',
+        "summary.json": '{"work_id": "re0004"}',
+        "spine.json": '{"key_beats": ["旧节拍"]}',
+    }
+    for name, content in preserved.items():
+        (wdir / name).write_text(content, encoding="utf-8")
+
+    calls: list[tuple] = []
+    monkeypatch.setattr(routes, "_launch_pipeline", lambda *args: calls.append(args))
+
+    res = client.post("/works/re0004/reanalyze")
+    assert res.status_code == 202
+
+    status = json.loads((wdir / "status.json").read_text(encoding="utf-8"))
+    assert status["phase"] == "queued"
+    assert status["progress"] == 0.0
+
+    for name, content in preserved.items():
+        assert (wdir / name).exists(), f"{name} was pre-deleted"
+        assert (wdir / name).read_text(encoding="utf-8") == content, (
+            f"{name} was modified before the pipeline ran"
+        )
+
+    assert len(calls) == 1
+    got_work_id, got_raw_path, got_filename, got_title, got_granularity = calls[0]
+    assert got_work_id == "re0004"
+    assert got_raw_path == wdir / "raw.txt"
+    assert got_filename == "novel.txt"
+    assert got_title == "旧作品"
+    assert got_granularity == "complete"

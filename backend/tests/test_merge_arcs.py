@@ -156,3 +156,105 @@ def test_merge_arcs_preserves_chapter_id_with_longest_evidence():
     rec = merged.relationships[key]
     assert rec.evidence == "更长的一段原文证据"
     assert rec.chapter_id == "ch0002"
+
+
+def test_merge_counts_accumulates_on_shared_keys():
+    """`_merge_counts` 必须累加而不是覆盖。
+
+    只有当 dst/src 共享同一个 chapter key 时，「累加」和「覆盖」才可区分；
+    键不相交的用例两种实现结果相同，抓不到 bug。
+    """
+    from app.pipeline.merge import _merge_counts
+
+    dst = {"ch0001": 2, "ch0002": 1}
+    _merge_counts(dst, {"ch0001": 3, "ch0009": 1})
+    assert dst == {"ch0001": 5, "ch0002": 1, "ch0009": 1}
+
+    # 空 src 不改变 dst；空 dst 等于拷贝 src。
+    _merge_counts(dst, {})
+    assert dst == {"ch0001": 5, "ch0002": 1, "ch0009": 1}
+    fresh: dict[str, int] = {}
+    _merge_counts(fresh, {"ch0003": 4})
+    assert fresh == {"ch0003": 4}
+
+
+def test_merge_arcs_preserves_chapter_distributions():
+    from app.models import Character, Place, Relationship
+    from app.pipeline.merge import EntityRegistry, merge_arcs
+
+    def _friend(source: str, target: str) -> Relationship:
+        return Relationship(
+            source=source,
+            target=target,
+            category="朋友",
+            detail="同门",
+            evidence="甲与乙同行",
+            confidence=0.9,
+        )
+
+    # arc1 在 ch0001 里提及两次 —— 让直方图出现 >1 的计数。
+    arc1 = EntityRegistry()
+    arc1.add_character(Character(name="甲", aliases=[], role="主角", description="少年"), "ch0001")
+    arc1.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0001")
+    arc1.add_character(Character(name="乙", aliases=[], role="", description=""), "ch0001")
+    arc1.add_place(Place(name="洛阳", description="东都"), "ch0001")
+    arc1.add_place(Place(name="洛阳", description=""), "ch0001")
+    arc1.add_relationship(_friend("甲", "乙"), "ch0001")
+    arc1.add_relationship(_friend("甲", "乙"), "ch0001")
+
+    # arc2 与 arc1 在 ch0001 上**重叠**，另有独占的 ch0009。重叠是关键：
+    # 只有共享 key 才能让「覆盖」式实现失败。
+    arc2 = EntityRegistry()
+    arc2.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0001")
+    arc2.add_character(Character(name="甲", aliases=[], role="", description=""), "ch0009")
+    arc2.add_character(Character(name="乙", aliases=[], role="", description=""), "ch0009")
+    arc2.add_place(Place(name="洛阳", description=""), "ch0001")
+    arc2.add_place(Place(name="洛阳", description=""), "ch0009")
+    # 反向给出无向关系，确保归一化后仍然只有一条记录。
+    arc2.add_relationship(_friend("乙", "甲"), "ch0001")
+    arc2.add_relationship(_friend("甲", "乙"), "ch0009")
+
+    merged = merge_arcs([arc1, arc2], confirm=False)
+
+    assert merged.characters["甲"].mentions_by_chapter == {"ch0001": 3, "ch0009": 1}
+    assert merged.places["洛阳"].mentions_by_chapter == {"ch0001": 3, "ch0009": 1}
+    # 无向关系的 src/tgt 归一化必须把正反两种写法收敛到同一条记录。
+    assert len(merged.relationships) == 1
+    rec = next(iter(merged.relationships.values()))
+    assert rec.chapters == {"ch0001": 3, "ch0009": 1}
+
+
+def test_apply_merge_folds_chapter_distributions():
+    from app.models import Character, Relationship
+    from app.pipeline.merge import EntityRegistry, _apply_merge
+
+    def _friend(source: str) -> Relationship:
+        return Relationship(
+            source=source,
+            target="乙",
+            category="朋友",
+            detail="",
+            evidence="",
+            confidence=0.5,
+        )
+
+    reg = EntityRegistry()
+    # 张三 与 张三丰 在 ch0004 上重叠，折叠时才能区分累加与覆盖。
+    reg.add_character(Character(name="张三", aliases=[], role="", description=""), "ch0001")
+    reg.add_character(Character(name="张三", aliases=[], role="", description=""), "ch0004")
+    reg.add_character(Character(name="张三丰", aliases=[], role="", description=""), "ch0004")
+    reg.add_character(Character(name="张三丰", aliases=[], role="", description=""), "ch0004")
+    reg.add_character(Character(name="乙", aliases=[], role="", description=""), "ch0001")
+    reg.add_relationship(_friend("张三"), "ch0001")
+    reg.add_relationship(_friend("张三"), "ch0004")
+    reg.add_relationship(_friend("张三丰"), "ch0004")
+    reg.add_relationship(_friend("张三丰"), "ch0004")
+
+    _apply_merge(reg, "张三丰", "张三")
+
+    assert "张三丰" not in reg.characters
+    assert reg.characters["张三"].mentions_by_chapter == {"ch0001": 1, "ch0004": 3}
+    # 两条关系记录折叠成一条（键冲突分支）。
+    assert len(reg.relationships) == 1
+    rec = next(iter(reg.relationships.values()))
+    assert rec.chapters == {"ch0001": 1, "ch0004": 3}

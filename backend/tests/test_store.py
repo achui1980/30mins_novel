@@ -159,3 +159,60 @@ def test_find_completed_work_by_hash_no_match_returns_none(temp_data_root):
 
 def test_find_completed_work_by_hash_empty_data_root_returns_none(temp_data_root):
     assert store.find_completed_work_by_hash("anything") is None
+
+
+# -- find_raw_path / clear_beat_cache (reanalyze helpers) ---------------------
+
+
+def test_find_raw_path_locates_upload(tmp_path, monkeypatch):
+    from app import config, store
+
+    monkeypatch.setattr(config, "DATA_ROOT", tmp_path)
+    wdir = tmp_path / "w1"
+    wdir.mkdir()
+    (wdir / "raw.epub").write_bytes(b"x")
+    # Decoys that sort *before* "raw.epub": the helper must match on the
+    # raw.* name, not just hand back whichever file it stumbles on first.
+    (wdir / "meta.json").write_text("{}", encoding="utf-8")
+    (wdir / "chapters.json").write_text("{}", encoding="utf-8")
+
+    found = store.find_raw_path("w1")
+    assert found is not None and found.name == "raw.epub"
+
+
+def test_find_raw_path_returns_none_when_missing(tmp_path, monkeypatch):
+    from app import config, store
+
+    monkeypatch.setattr(config, "DATA_ROOT", tmp_path)
+    wdir = tmp_path / "w2"
+    wdir.mkdir()
+    # A work directory with artifacts but no upload must yield None, not some
+    # unrelated file.
+    (wdir / "meta.json").write_text("{}", encoding="utf-8")
+    (wdir / "status.json").write_text("{}", encoding="utf-8")
+    assert store.find_raw_path("w2") is None
+
+
+def test_clear_beat_cache_removes_only_beat_summaries(tmp_path, monkeypatch):
+    from app import config, store
+
+    monkeypatch.setattr(config, "DATA_ROOT", tmp_path)
+    wdir = tmp_path / "w3"
+    wdir.mkdir()
+    (wdir / "beat_summaries.json").write_text("{}", encoding="utf-8")
+    (wdir / "chapter_summaries.json").write_text("{}", encoding="utf-8")
+    (wdir / "ask_history.json").write_text("[]", encoding="utf-8")
+
+    store.clear_beat_cache("w3")
+
+    assert not (wdir / "beat_summaries.json").exists()
+    assert (wdir / "chapter_summaries.json").exists()
+    assert (wdir / "ask_history.json").exists()
+
+
+def test_clear_beat_cache_is_idempotent(tmp_path, monkeypatch):
+    from app import config, store
+
+    monkeypatch.setattr(config, "DATA_ROOT", tmp_path)
+    (tmp_path / "w4").mkdir()
+    store.clear_beat_cache("w4")  # 不存在也不应该炸

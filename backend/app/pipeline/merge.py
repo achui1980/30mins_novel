@@ -33,6 +33,12 @@ def _norm(name: str) -> str:
     return name.strip().lower().replace(" ", "").replace("\u3000", "")
 
 
+def _merge_counts(dst: dict[str, int], src: dict[str, int]) -> None:
+    """把 src 的按章计数累加进 dst（原地）。"""
+    for key, value in src.items():
+        dst[key] = dst.get(key, 0) + value
+
+
 @dataclass
 class CharacterRecord:
     canonical: str
@@ -40,6 +46,8 @@ class CharacterRecord:
     role: str = ""
     description: str = ""
     mention_count: int = 0
+    # chapter_id -> 该章提及次数。用于前端人物出场曲线。
+    mentions_by_chapter: dict[str, int] = field(default_factory=dict)
 
     def all_names(self) -> set[str]:
         return {self.canonical, *self.aliases}
@@ -55,6 +63,8 @@ class PlaceRecord:
     canonical: str
     description: str = ""
     mention_count: int = 0
+    # chapter_id -> 该章提及次数。地点只用它推首次出场章，不画曲线。
+    mentions_by_chapter: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -67,6 +77,10 @@ class RelationRecord:
     confidence: float = 0.0
     count: int = 0
     chapter_id: str = ""
+    # 该「关系类别」在各章出现的次数。chapter_id -> count。
+    # 注意 count 不等于 sum(chapters.values())：跨弧合并时 count 走公开 API
+    # 每弧只 +1，而 chapters 是真实分布，后者才是时间轴的依据。
+    chapters: dict[str, int] = field(default_factory=dict)
 
 
 class EntityRegistry:
@@ -95,7 +109,13 @@ class EntityRegistry:
         return best[1] if best else None
 
     # -- ingestion ----------------------------------------------------------
-    def add_character(self, char: Character) -> str:
+    def add_character(
+        self,
+        char: Character,
+        chapter_id: str = "",
+        *,
+        record_chapter: bool = True,
+    ) -> str:
         canonical = self.resolve_character(char.name)
         if canonical is None:
             # Also try resolving via any provided alias before creating new.
@@ -114,6 +134,10 @@ class EntityRegistry:
 
         rec = self.characters[canonical]
         rec.mention_count += 1
+        if record_chapter and chapter_id:
+            rec.mentions_by_chapter[chapter_id] = (
+                rec.mentions_by_chapter.get(chapter_id, 0) + 1
+            )
         if not rec.role and char.role:
             rec.role = char.role
         if len(char.description) > len(rec.description):
@@ -127,7 +151,13 @@ class EntityRegistry:
             self._alias_index.setdefault(_norm(alias), canonical)
         return canonical
 
-    def add_place(self, place: Place) -> str:
+    def add_place(
+        self,
+        place: Place,
+        chapter_id: str = "",
+        *,
+        record_chapter: bool = True,
+    ) -> str:
         key = _norm(place.name)
         canonical = self._place_index.get(key)
         if canonical is None:
@@ -136,15 +166,25 @@ class EntityRegistry:
             self._place_index[key] = canonical
         rec = self.places[canonical]
         rec.mention_count += 1
+        if record_chapter and chapter_id:
+            rec.mentions_by_chapter[chapter_id] = (
+                rec.mentions_by_chapter.get(chapter_id, 0) + 1
+            )
         if len(place.description) > len(rec.description):
             rec.description = place.description
         return canonical
 
-    def add_relationship(self, rel: Relationship, chapter_id: str = "") -> None:
+    def add_relationship(
+        self,
+        rel: Relationship,
+        chapter_id: str = "",
+        *,
+        record_chapter: bool = True,
+    ) -> RelationRecord | None:
         src = self.resolve_character(rel.source) or rel.source.strip()
         tgt = self.resolve_character(rel.target) or rel.target.strip()
         if src == tgt:
-            return
+            return None
         category = rel.category.value if hasattr(rel.category, "value") else str(rel.category)
         # Undirected categories: normalize the key so (a,b)==(b,a).
         from ..models import DIRECTED_CATEGORIES, RelationCategory
@@ -172,12 +212,15 @@ class EntityRegistry:
         if len(rel.evidence) > len(rec.evidence):
             rec.evidence = rel.evidence
             rec.chapter_id = chapter_id
+        if record_chapter and chapter_id:
+            rec.chapters[chapter_id] = rec.chapters.get(chapter_id, 0) + 1
+        return rec
 
     def add_extraction(self, extraction: ChunkExtraction, chapter_id: str) -> None:
         for c in extraction.characters:
-            self.add_character(c)
+            self.add_character(c, chapter_id)
         for p in extraction.places:
-            self.add_place(p)
+            self.add_place(p, chapter_id)
         for r in extraction.relationships:
             self.add_relationship(r, chapter_id)
         for e in extraction.events:
@@ -328,6 +371,7 @@ def _apply_merge(merged, src, tgt):
     trec.aliases.update(srec.aliases)
     trec.aliases.add(src)
     trec.mention_count += srec.mention_count
+    _merge_counts(trec.mentions_by_chapter, srec.mentions_by_chapter)
     if srec.role and not trec.role:
         trec.role = srec.role
     if len(srec.description) > len(trec.description):
@@ -356,9 +400,11 @@ def _apply_merge(merged, src, tgt):
             new_rels[key] = RelationRecord(source=ns, target=nt, category=cat,
                                            detail=rec.detail, evidence=rec.evidence,
                                            confidence=rec.confidence, count=rec.count,
-                                           chapter_id=rec.chapter_id)
+                                           chapter_id=rec.chapter_id,
+                                           chapters=dict(rec.chapters))
         else:
             old.count += rec.count
+            _merge_counts(old.chapters, rec.chapters)
             old.confidence = max(old.confidence, rec.confidence)
             if len(rec.detail) > len(old.detail):
                 old.detail = rec.detail
@@ -375,19 +421,41 @@ def merge_arcs(arc_registries, *, confirm: bool = True, confirmer=None) -> Entit
     if not arc_registries:
         return merged
     for arc in arc_registries:
+        # 弧内记录已经是聚合过的按章分布，真实分布一律用 _merge_counts 显式搬运。
+        # add_relationship 这一处**必须** record_chapter=False：它要传
+        # chapter_id 去 seed rec.chapter_id（最长证据逻辑用），否则会重复计一次。
+        # add_character / add_place 两处的 record_chapter=False 只是防御性声明：
+        # 它们不传 chapter_id，守卫的 chapter_id 项本就为假。
         for rec in arc.characters.values():
-            merged.add_character(Character(name=rec.canonical, aliases=sorted(rec.aliases),
-                                           role=rec.role, description=rec.description))
+            canonical = merged.add_character(
+                Character(name=rec.canonical, aliases=sorted(rec.aliases),
+                          role=rec.role, description=rec.description),
+                record_chapter=False,
+            )
+            _merge_counts(
+                merged.characters[canonical].mentions_by_chapter,
+                rec.mentions_by_chapter,
+            )
         for rec in arc.places.values():
-            merged.add_place(Place(name=rec.canonical, description=rec.description))
+            place_canonical = merged.add_place(
+                Place(name=rec.canonical, description=rec.description),
+                record_chapter=False,
+            )
+            _merge_counts(
+                merged.places[place_canonical].mentions_by_chapter,
+                rec.mentions_by_chapter,
+            )
         for rel in arc.relationships.values():
-            merged.add_relationship(
+            merged_rel = merged.add_relationship(
                 Relationship(
                     source=rel.source, target=rel.target, category=rel.category,
                     detail=rel.detail, evidence=rel.evidence, confidence=rel.confidence,
                 ),
                 chapter_id=rel.chapter_id,
+                record_chapter=False,
             )
+            if merged_rel is not None:
+                _merge_counts(merged_rel.chapters, rel.chapters)
         merged.events.extend(dict(ev) for ev in arc.events)
     # Materialize characters referenced only by relationships so the merged
     # registry is the complete world (graph nodes) for downstream phases.

@@ -151,21 +151,30 @@ async def run_pipeline(
         graph_json = wdir / "graph.json"
         graph_html = wdir / "graph.html"
 
-        artifacts = run_graphify(
+        # run_graphify 内部会做聚类、社区标注（含一次 LLM 往返）与 HTML 渲染，
+        # 全部是同步阻塞调用；直接 await 它会占住 event loop，导致 write_status
+        # 停更、GET /status 看起来像假死。
+        artifacts = await asyncio.to_thread(
+            run_graphify,
             registry,
             graph_json,
             graph_html,
             community_labeler=label_communities,
         )
 
-        patch_graph_edge_locations(graph_json, registry, artifacts.label_to_id, paragraphs_by_chapter)
+        # locate.patch_graph_edge_locations 对每个 event 遍历全章段落做 difflib
+        # 模糊匹配（O(events × paragraphs)），是整条流水线里最重的纯 CPU 步骤。
+        await asyncio.to_thread(
+            patch_graph_edge_locations, graph_json, registry, artifacts.label_to_id, paragraphs_by_chapter
+        )
 
         # 5. Summarize -------------------------------------------------------
         status.phase = "summarizing"
         status.message = "正在生成分层摘要与设定卡…"
         write_status(status)
 
-        layered, setting_cards, suggested_questions, spine_payload = summarize(
+        layered, setting_cards, suggested_questions, spine_payload = await asyncio.to_thread(
+            summarize,
             registry,
             chapter_ids,
             artifacts.communities,

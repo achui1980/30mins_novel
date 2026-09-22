@@ -14,12 +14,12 @@ the registry so the whole pipeline runs offline / in tests.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
-from .. import config
-from . import llm
+from pydantic import BaseModel
 
-logger = logging.getLogger("novel_kg.summarize")
+from .. import config
 from ..models import (
     ArcSummary,
     ChapterSummary,
@@ -27,7 +27,21 @@ from ..models import (
     SettingCard,
     SuggestedQuestion,
 )
+from . import llm
 from .merge import EntityRegistry
+
+logger = logging.getLogger("novel_kg.summarize")
+
+
+# Response schemas for the summarize LLM calls. These used to be declared inside
+# _llm_summary as `class X(__import__("pydantic").BaseModel)`, which rebuilt the
+# model class and regenerated its JSON schema on every single call.
+class SettingCardsSchema(BaseModel):
+    cards: list[SettingCard]
+
+
+class SuggestedQuestionsSchema(BaseModel):
+    questions: list[SuggestedQuestion]
 
 
 # ---------------------------------------------------------------------------
@@ -434,9 +448,62 @@ def _llm_summary(registry, chapters, communities, community_labels, id_to_name, 
         "禁止只罗列人物或关系。\n"
         "- arcs：每条情节线一段摘要，对应下方给出的人物社区。\n"
     )
-    layered = llm.structured_output(
-        LayeredSummary, prompt, system_prompt=SUMMARY_SYSTEM_PROMPT, what="LayeredSummary"
+    cards_prompt = f"书名：{title}\n\n{digest}\n\n请生成3-6张设定卡（世界观/主题/关键概念），每张有title与content。"
+
+    # Step 3: 你可能想问——问题生成原本依赖 layered.overview，因此只能等分层摘要
+    # 返回后再串行发起。改为以主线/主角/节拍（spine_block）为依据后，它与
+    # LayeredSummary、SettingCards 之间再无数据依赖，三路可以同时打出去。
+    questions_context = spine_block or digest
+    questions_prompt = (
+        f"书名：{title}\n\n{questions_context}\n\n"
+        "请基于以上信息，生成3-5个读者读完这段简介后可能想问、且可以通过阅读小说实际章节内容"
+        "回答的问题（例如人物关系、情节转折、结局走向）。\n"
+        "严格禁止：\n"
+        "- 代码审查风格的问题（例如“是否应该拆分模块/重构”之类，与本书内容无关）；\n"
+        "- 过于主观、开放、无法从原文找到答案的问题（例如“你觉得这本书好看吗”）。\n"
+        "每个问题附一句简短 rationale（说明读者为什么可能想问这个）。"
     )
+
+    def _gen_layered():
+        return llm.structured_output(
+            LayeredSummary, prompt, system_prompt=SUMMARY_SYSTEM_PROMPT, what="LayeredSummary"
+        )
+
+    def _gen_cards():
+        # 设定卡失败不应连累已经生成好的分层摘要——单独兜底为假数据卡。
+        try:
+            return llm.structured_output(
+                SettingCardsSchema, cards_prompt, system_prompt=SUMMARY_SYSTEM_PROMPT, what="SettingCards"
+            ).cards
+        except Exception:  # noqa: BLE001
+            logger.exception("SettingCards generation failed; keeping LLM summary with fallback cards")
+            return _fake_setting_cards(registry, communities, community_labels)
+
+    def _gen_questions():
+        # 失败时独立兜底到确定性模板问题，绝不拖累已经生成好的摘要（同 SettingCards 模式）。
+        try:
+            return llm.structured_output(
+                SuggestedQuestionsSchema,
+                questions_prompt,
+                system_prompt=SUMMARY_SYSTEM_PROMPT,
+                what="SuggestedQuestions",
+            ).questions
+        except Exception:  # noqa: BLE001
+            logger.exception("SuggestedQuestions generation failed; falling back to heuristic questions")
+            return _fake_suggested_questions(spine_payload or {})
+
+    # 三路并行：这一阶段过去是 4 次串行 LLM 往返（spine → layered → cards →
+    # questions），墙钟时间等于四者之和。spine 仍需先行（它决定基调与主线），
+    # 但后三者彼此独立，用线程池同时发起即可把 3 次往返压缩成 1 次的时间。
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="summarize") as pool:
+        fut_layered = pool.submit(_gen_layered)
+        fut_cards = pool.submit(_gen_cards)
+        fut_questions = pool.submit(_gen_questions)
+        # LayeredSummary 是硬依赖，失败就让调用方整体退回 _fake_summary；
+        # 另两路已各自兜底，result() 不会抛。
+        layered = fut_layered.result()
+        cards = fut_cards.result()
+        suggested_questions = fut_questions.result()
 
     # 章节摘要改为“按需生成”：这里只放占位（章节id+标题，summary留空），
     # 由前端点击某章时再调用 /works/{id}/chapters/{ch}/summary 生成。
@@ -445,46 +512,6 @@ def _llm_summary(registry, chapters, communities, community_labels, id_to_name, 
         ChapterSummary(chapter=ch, title=titles.get(ch, ""), summary="")
         for ch in chapters
     ]
-
-    class SettingCards(__import__("pydantic").BaseModel):
-        cards: list[SettingCard]
-
-    cards_prompt = f"书名：{title}\n\n{digest}\n\n请生成3-6张设定卡（世界观/主题/关键概念），每张有title与content。"
-    # 设定卡失败不应连累已经生成好的分层摘要——单独兜底为假数据卡。
-    try:
-        cards = llm.structured_output(
-            SettingCards, cards_prompt, system_prompt=SUMMARY_SYSTEM_PROMPT, what="SettingCards"
-        ).cards
-    except Exception:  # noqa: BLE001
-        logger.exception("SettingCards generation failed; keeping LLM summary with fallback cards")
-        cards = _fake_setting_cards(registry, communities, community_labels)
-
-    # Step 3: 你可能想问——基于已经算好的主线/主角/节拍与概述，
-    # 生成能被 agentic Q&A 真正回答的问题，而不是 graphify 的代码审查式问题。
-    # 失败时独立兜底到确定性模板问题，绝不拖累已经生成好的摘要（同 SettingCards 模式）。
-    try:
-        class SuggestedQuestionsSchema(__import__("pydantic").BaseModel):
-            questions: list[SuggestedQuestion]
-
-        questions_prompt = (
-            f"书名：{title}\n\n{spine_block}\n\n"
-            f"故事概述：{layered.overview}\n\n"
-            "请基于以上信息，生成3-5个读者读完这段简介后可能想问、且可以通过阅读小说实际章节内容"
-            "回答的问题（例如人物关系、情节转折、结局走向）。\n"
-            "严格禁止：\n"
-            "- 代码审查风格的问题（例如“是否应该拆分模块/重构”之类，与本书内容无关）；\n"
-            "- 过于主观、开放、无法从原文找到答案的问题（例如“你觉得这本书好看吗”）。\n"
-            "每个问题附一句简短 rationale（说明读者为什么可能想问这个）。"
-        )
-        suggested_questions = llm.structured_output(
-            SuggestedQuestionsSchema,
-            questions_prompt,
-            system_prompt=SUMMARY_SYSTEM_PROMPT,
-            what="SuggestedQuestions",
-        ).questions
-    except Exception:  # noqa: BLE001
-        logger.exception("SuggestedQuestions generation failed; falling back to heuristic questions")
-        suggested_questions = _fake_suggested_questions(spine_payload or {})
 
     return layered, cards, suggested_questions, spine_payload
 

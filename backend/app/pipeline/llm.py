@@ -19,6 +19,7 @@ import json
 import logging
 import re
 import time
+from functools import lru_cache
 
 from pydantic import ValidationError
 
@@ -99,8 +100,17 @@ def _resolve_model_id(tier: str) -> str:
     return default
 
 
+@lru_cache(maxsize=8)
 def make_model(tier: str = "fast"):  # pragma: no cover - requires LLM creds
-    """Return the strands model instance for the configured provider."""
+    """Return the strands model instance for the configured provider.
+
+    Cached per ``tier``: a full extraction issues one call per block (hundreds
+    to thousands), and rebuilding the model each time re-created a boto3 client
+    (credential resolution, ~100ms) or a fresh httpx pool (TLS handshake per
+    block). Both underlying clients are thread-safe, so one instance per tier is
+    shared across the extraction thread pool. ``config`` is read at import time
+    and never mutated at runtime, so the cache can live for the process.
+    """
     provider = _resolve_provider(tier)
     model_id = _resolve_model_id(tier)
     if provider == "openai_compatible":
@@ -241,15 +251,25 @@ def _openai_structured_output(schema, prompt, *, system_prompt, what, attempts, 
     raise last_exc
 
 
-def _openai_completion(messages, *, model: str, max_tokens: int):  # pragma: no cover - real call
-    """Single OpenAI-compatible chat completion returning raw JSON text."""
+@lru_cache(maxsize=1)
+def _openai_client():  # pragma: no cover - real call
+    """Cached OpenAI-compatible client (shared httpx connection pool).
+
+    Previously built per call, so every block paid a fresh TLS handshake. The
+    client is thread-safe and the credentials come from import-time config.
+    """
     from openai import OpenAI
 
-    client = OpenAI(
+    return OpenAI(
         api_key=config.OPENAI_COMPATIBLE_API_KEY,
         base_url=config.OPENAI_COMPATIBLE_BASE_URL,
         timeout=config.OPENAI_COMPATIBLE_TIMEOUT,
     )
+
+
+def _openai_completion(messages, *, model: str, max_tokens: int):  # pragma: no cover - real call
+    """Single OpenAI-compatible chat completion returning raw JSON text."""
+    client = _openai_client()
     extra: dict = {}
     # The `thinking` field is only supported by DeepSeek/MiniMax; other
     # endpoints may 400 on unknown extra_body fields.
